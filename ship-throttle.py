@@ -7,15 +7,20 @@ from evdev import UInput, AbsInfo, ecodes as e
 
 UDP_PORT = 6589
 
-capabilities = {
+min_val = 300
+max_val = 860
+
+throttle_capabilities = {
   e.EV_KEY: [
     e.BTN_JOYSTICK,
   ],
   e.EV_ABS: [
     (e.ABS_X, AbsInfo(
       value=0,
-      min=0,
-      max=1023,
+      # min=0,
+      # max=1023,
+      min=min_val,
+      max=max_val,
       fuzz=0,
       flat=0,
       resolution=0,
@@ -23,8 +28,27 @@ capabilities = {
   ],
 }
 
-ui1 = UInput(capabilities, name="ESP Azipod Left")
-ui2 = UInput(capabilities, name="ESP Azipod Right")
+azipod_capabilities = {
+  e.EV_KEY: [
+    e.BTN_JOYSTICK,
+  ],
+  e.EV_ABS: [
+    (e.ABS_X, AbsInfo(
+      value=0,
+      min=0,
+      max=359,
+      fuzz=0,
+      flat=0,
+      resolution=0,
+    ))
+  ],
+}
+
+ui1 = UInput(azipod_capabilities, name="ESP Azipod Left")
+ui2 = UInput(azipod_capabilities, name="ESP Azipod Right")
+
+ui3 = UInput(throttle_capabilities, name="ESP Throttle Left")
+ui4 = UInput(throttle_capabilities, name="ESP Throttle Right")
 
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.bind(("0.0.0.0", UDP_PORT))
@@ -39,16 +63,35 @@ try:
       continue
 
     value = int.from_bytes(data, byteorder="little")
+    throttle = value & 0xFFFF
+    azipod = 359 - (value >> 16)
 
-    print(value, flush=True)
+    if throttle < min_val:
+      throttle = min_val
+    elif throttle > max_val:
+      throttle = max_val
+      
+    if throttle >= 510 and throttle <= 620:
+      throttle = (max_val - min_val) // 2 + min_val
+    else:
+      throttle = max_val - throttle + min_val
+    
 
-    ui1.write(e.EV_ABS, e.ABS_X, value)
+    print("Throttle: %d; Azipod: %d" % (throttle, azipod), flush=True)
+
+    ui1.write(e.EV_ABS, e.ABS_X, azipod)
     ui1.syn()
-
-    ui2.write(e.EV_ABS, e.ABS_X, value)
+    ui2.write(e.EV_ABS, e.ABS_X, azipod)
     ui2.syn()
+
+    ui3.write(e.EV_ABS, e.ABS_X, throttle)
+    ui3.syn()
+    ui4.write(e.EV_ABS, e.ABS_X, throttle)
+    ui4.syn()
 
 finally:
   s.close()
   ui1.close()
   ui2.close()
+  ui3.close()
+  ui4.close()

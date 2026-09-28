@@ -1,7 +1,11 @@
 #!/bin/bash
 
-JOY_LEFT="ESP Azipod Left"
-JOY_RIGHT="ESP Azipod Right"
+JOY_AZPIPOD_LEFT="ESP Azipod Left"
+JOY_AZPIPOD_RIGHT="ESP Azipod Right"
+
+JOY_THROTTLE_LEFT="ESP Throttle Left"
+JOY_THROTTLE_RIGHT="ESP Throttle Right"
+
 VS_DIR="$HOME/.wine/drive_c/apps/Virtual Sailor"
 UINPUT="/dev/uinput"
 THROTTLE_COMMAND=(python ship-throttle.py)
@@ -37,22 +41,23 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+
 echo "Waiting for Virtual Joysticks.."
-while ! xinput list --name-only | grep -qx "$JOY_LEFT"; do
-  sleep 0.05
+
+for joystick in \
+  "$JOY_AZPIPOD_LEFT" \
+  "$JOY_AZPIPOD_RIGHT" \
+  "$JOY_THROTTLE_LEFT" \
+  "$JOY_THROTTLE_RIGHT"
+do
+  while ! xinput list --name-only | grep -qx "$joystick"; do
+    sleep 0.05
+  done
+  echo "$joystick is ready."
+
+  xinput set-prop "$joystick" "Generate Mouse Events" 0
+  xinput set-prop "$joystick" "Generate Key Events" 0
 done
-echo "$JOY_LEFT is ready."
-
-while ! xinput list --name-only | grep -qx "$JOY_RIGHT"; do
-  sleep 0.05
-done
-echo "$JOY_RIGHT is ready."
-
-xinput set-prop "$JOY_LEFT"  "Generate Mouse Events" 0
-xinput set-prop "$JOY_LEFT"  "Generate Key Events" 0
-
-xinput set-prop "$JOY_RIGHT" "Generate Mouse Events" 0
-xinput set-prop "$JOY_RIGHT" "Generate Key Events" 0
 
 #WINEDEBUG=+joystick SDL_JOYSTICK_DEVICE=/dev/input/js0
 
