@@ -87,7 +87,6 @@ class Rotary:
     return 359 - max(0, min(val, 359))
 
 class Azipod:
-
   def __init__(self, min_val, max_val, suffix):
     self.joy_rotary = UInput(self._build_capab(0, 359), name="ESP Azipod %s" % suffix)
     self.joy_throttle = UInput(self._build_capab(min_val, max_val), name="ESP Throttle %s" % suffix)
@@ -133,7 +132,6 @@ class Azipod:
     print("%s: %d" % (joy.name, val))
     joy.write(ecodes.EV_ABS, ecodes.ABS_X, val)
     joy.syn()
-
 
 class Server:
   def __init__(self, port, events=None):
