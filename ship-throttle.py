@@ -3,7 +3,7 @@
 # sudo apt-get install python3-evdev
 
 import socket
-from evdev import UInput, AbsInfo, ecodes as e
+from evdev import UInput, AbsInfo, ecodes
 import subprocess
 import os
 
@@ -12,42 +12,20 @@ UDP_PORT = 6589
 PORT_THROTTLE_MIN_VAL = 250
 PORT_THROTTLE_MAX_VAL = 1024
 
+STARBOARD_THROTTLE_MIN_VAL = 250
+STARBOARD_THROTTLE_MAX_VAL = 1024
+
 VS_DIR="/home/zeroflag/.wine/drive_c/apps/Virtual Sailor"
 CLICK_WAV=os.path.join(VS_DIR, "sounds/Click.wav")
 
-throttle_capabilities = {
-  e.EV_KEY: [
-    e.BTN_JOYSTICK,
-  ],
-  e.EV_ABS: [
-    (e.ABS_X, AbsInfo(
-      value=0,
-      # min=0,
-      # max=1023,
-      min=PORT_THROTTLE_MIN_VAL,
-      max=PORT_THROTTLE_MAX_VAL,
-      fuzz=0,
-      flat=0,
-      resolution=0,
-    ))
-  ],
-}
+class Events:
+  def __init__(self, a_dict, sender):
+    self.callbacks = a_dict or {}
+    self.sender = sender
 
-azipod_capabilities = {
-  e.EV_KEY: [
-    e.BTN_JOYSTICK,
-  ],
-  e.EV_ABS: [
-    (e.ABS_X, AbsInfo(
-      value=0,
-      min=0,
-      max=359,
-      fuzz=0,
-      flat=0,
-      resolution=0,
-    ))
-  ],
-}
+  def signal(self, event):
+    if event in self.callbacks:
+      self.callbacks[event](self.sender)
 
 class Throttle:
   def __init__(self, min_val, max_val, invert=False, deadband=30, events=None):
@@ -58,7 +36,7 @@ class Throttle:
     self._value = self.mid_val
     self.deadband = deadband
     self.neutral = True
-    self.events = events
+    self.events = Events(events, self)
 
   @property
   def value(self):
@@ -76,10 +54,10 @@ class Throttle:
     if self._at_center():
       if not self.neutral:
         self.neutral = True
-        self._signal('NEUTRAL')
+        self.events.signal('NEUTRAL')
     else:
       self.neutral = False
-    self._signal('CHANGED')
+    self.events.signal('CHANGED')
 
   def _clamp(self, val):
     val = max(self.min_val, min(val, self.max_val))
@@ -90,58 +68,109 @@ class Throttle:
   def _at_center(self):
     return self._value == self.mid_val
 
-  def _signal(self, event):
-    if self.events and event in self.events:
-      self.events[event](self)
+class Rotary:
+  def __init__(self, events=None):
+    self._angle = 0
+    self.events = Events(events, self)
 
-def set_joy_x(joys, val):
-  for joy in joys:
+  @property
+  def value(self):
+    return self._angle
+
+  def move_to(self, val):
+    new_value = self._clamp(val)
+    if self._angle != new_value:
+      self._angle = new_value
+      self.events.signal('CHANGED')
+
+  def _clamp(self, val):
+    return 359 - max(0, min(val, 359))
+
+class Azipod:
+
+  def __init__(self, min_val, max_val, suffix):
+    self.joy_rotary = UInput(self._build_capab(0, 359), name="ESP Azipod %s" % suffix)
+    self.joy_throttle = UInput(self._build_capab(min_val, max_val), name="ESP Throttle %s" % suffix)
+    self.throttle = Throttle(
+      min_val=min_val,
+      max_val=max_val,
+      invert=True,
+      events={'NEUTRAL' : lambda t: subprocess.Popen(["aplay", CLICK_WAV]),
+              'CHANGED' : self._throttle_changed})
+    self.rotary = Rotary(
+      events={'CHANGED' : self._rotary_changed})
+
+  def _build_capab(self, min_val, max_val):
+    return {
+      ecodes.EV_KEY: [ ecodes.BTN_JOYSTICK ],
+      ecodes.EV_ABS: [
+        (ecodes.ABS_X, AbsInfo(
+          value=0,
+          min=min_val,
+          max=max_val,
+          fuzz=0,
+          flat=0,
+          resolution=0,
+        ))
+      ]
+    }
+
+  def move_to(self, value):
+    self.throttle.move_to(value & 0xFFFF) 
+    self.rotary.move_to(value >> 16)
+
+  def close(self):
+    self.joy_rotary.close()
+    self.joy_throttle.close()
+
+  def _throttle_changed(self, sender):
+    self._set_joy_x(self.joy_throttle, self.sender.value)
+
+  def _rotary_changed(self, sender):
+    self._set_joy_x(self.joy_rotary, self.sender.value)
+
+  def _set_joy_x(self, joy, val):
     print("%s: %d" % (joy.name, val))
-    joy.write(e.EV_ABS, e.ABS_X, val)
+    joy.write(ecodes.EV_ABS, ecodes.ABS_X, val)
     joy.syn()
 
-ui1 = UInput(azipod_capabilities, name="ESP Azipod Left")
-ui2 = UInput(azipod_capabilities, name="ESP Azipod Right")
 
-ui3 = UInput(throttle_capabilities, name="ESP Throttle Left")
-ui4 = UInput(throttle_capabilities, name="ESP Throttle Right")
+class Server:
+  def __init__(self, port, events=None):
+    self.events = Events(events, self)
+    self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    self.socket.bind(("0.0.0.0", port))
+    self.data = 0
+    print(f"Listening on UDP port {port}...")
 
-port_throttle = Throttle(
-  min_val=PORT_THROTTLE_MIN_VAL,
-  max_val=PORT_THROTTLE_MAX_VAL,
-  invert=True,
-  events={'NEUTRAL' : lambda t: subprocess.Popen(["aplay", CLICK_WAV]),
-          'CHANGED' : lambda t: set_joy_x((ui3, ui4), t.value)})
+  def start(self):
+    while True:
+      data, addr = self.socket.recvfrom(4)
+      if len(data) != 4:
+        continue
+      self.data = int.from_bytes(data, byteorder="little")
+      self.events.signal('ON_DATA')
 
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.bind(("0.0.0.0", UDP_PORT))
+  def close(self):
+    self.socket.close()
 
-print(f"Listening on UDP port {UDP_PORT}...")
+port_azipod      = Azipod(PORT_THROTTLE_MIN_VAL,
+                          PORT_THROTTLE_MAX_VAL,
+                          "Left")
+
+starboard_azipod = Azipod(STARBOARD_THROTTLE_MIN_VAL,
+                          STARBOARD_THROTTLE_MAX_VAL,
+                          "Right")
+
+def update(server):
+  port_azipod.move_to(server.data)
+  starboard_azipod.move_to(server.data)
+
+server = Server(UDP_PORT, events={'ON_DATA': update})
 
 try:
-  while True:
-    data, addr = s.recvfrom(4)
-
-    if len(data) != 4:
-      continue
-
-    value = int.from_bytes(data, byteorder="little")
-    port_throttle.move_to(value & 0xFFFF) 
-    azipod = value >> 16
-
-    if azipod < 0:
-      azipod = 0
-    else:
-      azipod = 359 - azipod
-
-    ui1.write(e.EV_ABS, e.ABS_X, azipod)
-    ui1.syn()
-    ui2.write(e.EV_ABS, e.ABS_X, azipod)
-    ui2.syn()
-
+  server.start()
 finally:
-  s.close()
-  ui1.close()
-  ui2.close()
-  ui3.close()
-  ui4.close()
+  server.close()
+  port_azipod.close()
+  starboard_azipod.close()
