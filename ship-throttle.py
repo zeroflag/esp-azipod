@@ -154,23 +154,26 @@ class Server:
   def close(self):
     self.socket.close()
 
-port_azipod      = Azipod(PORT_THROTTLE_MIN_VAL,
-                          PORT_THROTTLE_MAX_VAL,
-                          "Left")
-
-starboard_azipod = Azipod(STARBOARD_THROTTLE_MIN_VAL,
-                          STARBOARD_THROTTLE_MAX_VAL,
-                          "Right")
-
 def update(server):
   port_azipod.move_to(server.data)
   starboard_azipod.move_to(server.data)
 
-server = Server(UDP_PORT, events={'ON_DATA': update})
+def main_loop():
+  port_azipod      = Azipod(PORT_THROTTLE_MIN_VAL,
+                            PORT_THROTTLE_MAX_VAL,
+                            "Left")
 
-try:
-  server.start()
-finally:
-  server.close()
-  port_azipod.close()
-  starboard_azipod.close()
+  starboard_azipod = Azipod(STARBOARD_THROTTLE_MIN_VAL,
+                            STARBOARD_THROTTLE_MAX_VAL,
+                            "Right")
+
+  server = Server(UDP_PORT, events={'ON_DATA': update})
+  try:
+    server.start()
+  finally:
+    server.close()
+    port_azipod.close()
+    starboard_azipod.close()
+  
+if __name__ == '__main__':
+  main_loop()
