@@ -49,17 +49,6 @@ azipod_capabilities = {
   ],
 }
 
-ui1 = UInput(azipod_capabilities, name="ESP Azipod Left")
-ui2 = UInput(azipod_capabilities, name="ESP Azipod Right")
-
-ui3 = UInput(throttle_capabilities, name="ESP Throttle Left")
-ui4 = UInput(throttle_capabilities, name="ESP Throttle Right")
-
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.bind(("0.0.0.0", UDP_PORT))
-
-print(f"Listening on UDP port {UDP_PORT}...")
-
 class Throttle:
   def __init__(self, min_val, max_val, invert=False, deadband=30, events=None):
     self.min_val = min_val
@@ -105,17 +94,29 @@ class Throttle:
     if self.events and event in self.events:
       self.events[event](self)
 
-def set_joy_x(joy, val):
-  print("JOY %s: %d" % (joy.name, val))
-  joy.write(e.EV_ABS, e.ABS_X, val)
-  joy.syn()
+def set_joy_x(joys, val):
+  for joy in joys:
+    print("%s: %d" % (joy.name, val))
+    joy.write(e.EV_ABS, e.ABS_X, val)
+    joy.syn()
+
+ui1 = UInput(azipod_capabilities, name="ESP Azipod Left")
+ui2 = UInput(azipod_capabilities, name="ESP Azipod Right")
+
+ui3 = UInput(throttle_capabilities, name="ESP Throttle Left")
+ui4 = UInput(throttle_capabilities, name="ESP Throttle Right")
 
 port_throttle = Throttle(
   min_val=PORT_THROTTLE_MIN_VAL,
   max_val=PORT_THROTTLE_MAX_VAL,
   invert=True,
   events={'NEUTRAL' : lambda t: subprocess.Popen(["aplay", CLICK_WAV]),
-          'CHANGED' : lambda t: set_joy_x(ui3, t.value)})
+          'CHANGED' : lambda t: set_joy_x((ui3, ui4), t.value)})
+
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.bind(("0.0.0.0", UDP_PORT))
+
+print(f"Listening on UDP port {UDP_PORT}...")
 
 try:
   while True:
@@ -133,10 +134,10 @@ try:
     else:
       azipod = 359 - azipod
 
-#    ui1.write(e.EV_ABS, e.ABS_X, azipod)
-#    ui1.syn()
-#    ui2.write(e.EV_ABS, e.ABS_X, azipod)
-#    ui2.syn()
+    ui1.write(e.EV_ABS, e.ABS_X, azipod)
+    ui1.syn()
+    ui2.write(e.EV_ABS, e.ABS_X, azipod)
+    ui2.syn()
 
 finally:
   s.close()
