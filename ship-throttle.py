@@ -9,10 +9,10 @@ import os
 
 UDP_PORT = 6589
 
-PORT_THROTTLE_MIN_VAL = 250
+PORT_THROTTLE_MIN_VAL = 330
 PORT_THROTTLE_MAX_VAL = 1024
 
-STARBOARD_THROTTLE_MIN_VAL = 250
+STARBOARD_THROTTLE_MIN_VAL = 330
 STARBOARD_THROTTLE_MAX_VAL = 1024
 
 VS_DIR="/home/zeroflag/.wine/drive_c/apps/Virtual Sailor"
@@ -123,10 +123,10 @@ class Azipod:
     self.joy_throttle.close()
 
   def _throttle_changed(self, sender):
-    self._set_joy_x(self.joy_throttle, self.sender.value)
+    self._set_joy_x(self.joy_throttle, sender.value)
 
   def _rotary_changed(self, sender):
-    self._set_joy_x(self.joy_rotary, self.sender.value)
+    self._set_joy_x(self.joy_rotary, sender.value)
 
   def _set_joy_x(self, joy, val):
     print("%s: %d" % (joy.name, val))
@@ -152,10 +152,6 @@ class Server:
   def close(self):
     self.socket.close()
 
-def update(server):
-  port_azipod.move_to(server.data)
-  starboard_azipod.move_to(server.data)
-
 def main_loop():
   port_azipod      = Azipod(PORT_THROTTLE_MIN_VAL,
                             PORT_THROTTLE_MAX_VAL,
@@ -164,6 +160,10 @@ def main_loop():
   starboard_azipod = Azipod(STARBOARD_THROTTLE_MIN_VAL,
                             STARBOARD_THROTTLE_MAX_VAL,
                             "Right")
+
+  def update(server):
+    port_azipod.move_to(server.data)
+    starboard_azipod.move_to(server.data)
 
   server = Server(UDP_PORT, events={'ON_DATA': update})
   try:
