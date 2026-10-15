@@ -9,11 +9,14 @@ import os
 
 UDP_PORT = 6589
 
-PORT_THROTTLE_MIN_VAL = 330
-PORT_THROTTLE_MAX_VAL = 1024
+PORT_THROTTLE_MIN_VAL = 170
+PORT_THROTTLE_MAX_VAL = 920
 
-STARBOARD_THROTTLE_MIN_VAL = 330
-STARBOARD_THROTTLE_MAX_VAL = 1024
+STARBOARD_THROTTLE_MIN_VAL = 170
+STARBOARD_THROTTLE_MAX_VAL = 920
+
+PORT_AZIPOD_NEUTRAL = 149
+STARBOARD_AZIPOD_NEUTRAL = 149
 
 VS_DIR="/home/zeroflag/.wine/drive_c/apps/Virtual Sailor"
 CLICK_WAV=os.path.join(VS_DIR, "sounds/Click.wav")
@@ -69,8 +72,10 @@ class Throttle:
     return self._value == self.mid_val
 
 class Rotary:
-  def __init__(self, events=None):
+  def __init__(self, events=None, offset = 0, invert = False):
     self._angle = 0
+    self._offset = offset
+    self._invert = invert
     self.events = Events(events, self)
 
   @property
@@ -78,16 +83,19 @@ class Rotary:
     return self._angle
 
   def move_to(self, val):
-    new_value = self._clamp(val)
+    new_value = self._may_invert(self._clamp(val) + self._offset)
     if self._angle != new_value:
       self._angle = new_value
       self.events.signal('CHANGED')
 
   def _clamp(self, val):
-    return 359 - max(0, min(val, 359))
+    return max(0, min(val, 359))
+
+  def _may_invert(self, val):
+    return 359 - val if self._invert else val
 
 class Azipod:
-  def __init__(self, min_val, max_val, suffix):
+  def __init__(self, min_val, max_val, suffix, azipod_neutral = 180):
     self.joy_rotary = UInput(self._build_capab(0, 359), name="ESP Azipod %s" % suffix)
     self.joy_throttle = UInput(self._build_capab(min_val, max_val), name="ESP Throttle %s" % suffix)
     self.throttle = Throttle(
@@ -97,7 +105,8 @@ class Azipod:
       events={'NEUTRAL' : lambda t: subprocess.Popen(["aplay", CLICK_WAV]),
               'CHANGED' : self._throttle_changed})
     self.rotary = Rotary(
-      events={'CHANGED' : self._rotary_changed})
+      events={'CHANGED' : self._rotary_changed},
+      offset=180 - azipod_neutral)
 
   def _build_capab(self, min_val, max_val):
     return {
@@ -155,11 +164,13 @@ class Server:
 def main_loop():
   port_azipod      = Azipod(PORT_THROTTLE_MIN_VAL,
                             PORT_THROTTLE_MAX_VAL,
-                            "Left")
+                            "Left",
+                            azipod_neutral=PORT_AZIPOD_NEUTRAL)
 
   starboard_azipod = Azipod(STARBOARD_THROTTLE_MIN_VAL,
                             STARBOARD_THROTTLE_MAX_VAL,
-                            "Right")
+                            "Right",
+                            azipod_neutral=STARBOARD_AZIPOD_NEUTRAL)
 
   def update(server):
     port_azipod.move_to(server.data)
