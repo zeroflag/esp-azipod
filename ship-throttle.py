@@ -15,8 +15,8 @@ PORT_THROTTLE_MAX_VAL = 920
 STARBOARD_THROTTLE_MIN_VAL = 170
 STARBOARD_THROTTLE_MAX_VAL = 920
 
-PORT_AZIPOD_NEUTRAL = 149
-STARBOARD_AZIPOD_NEUTRAL = 149
+PORT_AZIPOD_NEUTRAL = 103
+STARBOARD_AZIPOD_NEUTRAL = 103
 
 VS_DIR="/home/zeroflag/.wine/drive_c/apps/Virtual Sailor"
 CLICK_WAV=os.path.join(VS_DIR, "sounds/Click.wav")
@@ -72,10 +72,9 @@ class Throttle:
     return self._value == self.mid_val
 
 class Rotary:
-  def __init__(self, events=None, offset = 0, invert = False):
+  def __init__(self, events=None, offset = 0):
     self._angle = 0
     self._offset = offset
-    self._invert = invert
     self.events = Events(events, self)
 
   @property
@@ -83,16 +82,16 @@ class Rotary:
     return self._angle
 
   def move_to(self, val):
-    new_value = self._may_invert(self._clamp(val) + self._offset)
+    new_value = self._add_offset(self._clamp(val))
     if self._angle != new_value:
       self._angle = new_value
       self.events.signal('CHANGED')
 
+  def _add_offset(self, val):
+    return (val + self._offset) % 360 
+
   def _clamp(self, val):
     return max(0, min(val, 359))
-
-  def _may_invert(self, val):
-    return 359 - val if self._invert else val
 
 class Azipod:
   def __init__(self, min_val, max_val, suffix, azipod_neutral = 180):
