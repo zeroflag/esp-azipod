@@ -151,11 +151,17 @@ class Server:
 
   def start(self):
     while True:
-      data, addr = self.socket.recvfrom(4)
-      if len(data) != 4:
+      val, addr = self.socket.recvfrom(4)
+      if len(val) != 4:
         continue
-      self.data = int.from_bytes(data, byteorder="little")
-      self.events.signal('ON_DATA')
+
+      val = int.from_bytes(val, byteorder="little")
+      self.data = val & 0x7fffffff
+
+      if val & 0x80000000:
+        self.events.signal('ON_DATA_STARBOARD')
+      else:
+        self.events.signal('ON_DATA_PORT')
 
   def close(self):
     self.socket.close()
@@ -171,11 +177,11 @@ def main_loop():
                             "Right",
                             azipod_neutral=STARBOARD_AZIPOD_NEUTRAL)
 
-  def update(server):
-    port_azipod.move_to(server.data)
-    starboard_azipod.move_to(server.data)
+  server = Server(UDP_PORT, events={
+    'ON_DATA_STARBOARD': lambda server: starboard_azipod.move_to(server.data),
+    'ON_DATA_PORT': lambda server: port_azipod.move_to(server.data)
+  })
 
-  server = Server(UDP_PORT, events={'ON_DATA': update})
   try:
     server.start()
   finally:

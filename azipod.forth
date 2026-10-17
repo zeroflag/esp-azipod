@@ -58,7 +58,7 @@ exception: EI2C
 \ Low  16 bit: Throttle turn
 4 buffer: packet
 
-"192.168.0.151" 6589 
+"192.168.0.151" 7589 
   constant: SERVER_PORT
   constant: SERVER_IP
 
