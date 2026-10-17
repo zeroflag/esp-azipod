@@ -8,7 +8,7 @@ JOY_THROTTLE_RIGHT="ESP Throttle Right"
 
 VS_DIR="$HOME/.wine/drive_c/apps/Virtual Sailor"
 UINPUT="/dev/uinput"
-THROTTLE_COMMAND=(python ship-throttle.py)
+THROTTLE_COMMAND=(python azipod.py)
 
 cd "$VS_DIR" || {
   echo "Error: cannot change to directory: $VS_DIR" >&2
