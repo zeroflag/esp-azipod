@@ -1,6 +1,8 @@
 WIFI load
 NETCON load
 
+FALSE constant: STARBOARD
+
 ( *** I2C AS5600 sensor *** )
 
 5 ( D1 SCL ) constant: SCL
@@ -18,7 +20,7 @@ exception: EI2C
 16r0E as5600-reg-angle  c!
 16r0B as5600-reg-status c!
 
--1 init-variable: angle
+180 init-variable: angle
 
 : i2c-check ( code -- | throws:EI2C ) 0<> if EI2C throw then ;
 
@@ -43,7 +45,7 @@ exception: EI2C
 
 ( *** Potentiometer analog input *** )
 
--1 init-variable: throttle
+0 init-variable: throttle
 
 : potmeter-read ( -- n )
   adc-read
@@ -62,10 +64,18 @@ exception: EI2C
   constant: SERVER_PORT
   constant: SERVER_IP
 
+: flag ( n -- n )
+  STARBOARD if
+    16r80000000 or
+  else
+    16r7FFFFFFF and
+  then ;
+
 : make-packet ( -- )
-  angle   @ 16 lshift
+  angle    @ 16 lshift
   throttle @ 16rFFFF and
   or
+  flag
   packet ! ;
 
 : send ( -- )
@@ -116,7 +126,16 @@ variable: to-send
     DELAY ms
   again ;
 
+: name ( -- s )
+  STARBOARD if
+    "Starboard Azipod"
+  else
+    "Port Azipod"
+  then ;
+
 : main ( -- )
+  cr name type
+  println: " ready."
   as5600-init
   poll-sensors ;
 

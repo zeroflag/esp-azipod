@@ -9,11 +9,11 @@ import os
 
 UDP_PORT = 6589
 
-PORT_THROTTLE_MIN_VAL = 170
-PORT_THROTTLE_MAX_VAL = 920
+PORT_THROTTLE_MIN_VAL = 110
+PORT_THROTTLE_MAX_VAL = 860
 
-STARBOARD_THROTTLE_MIN_VAL = 170
-STARBOARD_THROTTLE_MAX_VAL = 920
+STARBOARD_THROTTLE_MIN_VAL = 1
+STARBOARD_THROTTLE_MAX_VAL = 700
 
 PORT_AZIPOD_NEUTRAL = 103
 STARBOARD_AZIPOD_NEUTRAL = 103
@@ -94,13 +94,13 @@ class Rotary:
     return max(0, min(val, 359))
 
 class Azipod:
-  def __init__(self, min_val, max_val, suffix, azipod_neutral = 180):
+  def __init__(self, min_val, max_val, suffix, invert_throttle=False, azipod_neutral = 180):
     self.joy_rotary = UInput(self._build_capab(0, 359), name="ESP Azipod %s" % suffix)
     self.joy_throttle = UInput(self._build_capab(min_val, max_val), name="ESP Throttle %s" % suffix)
     self.throttle = Throttle(
       min_val=min_val,
       max_val=max_val,
-      invert=True,
+      invert=invert_throttle,
       events={'NEUTRAL' : lambda t: subprocess.Popen(["aplay", CLICK_WAV]),
               'CHANGED' : self._throttle_changed})
     self.rotary = Rotary(
@@ -170,11 +170,13 @@ def main_loop():
   port_azipod      = Azipod(PORT_THROTTLE_MIN_VAL,
                             PORT_THROTTLE_MAX_VAL,
                             "Left",
+                            invert_throttle=True,
                             azipod_neutral=PORT_AZIPOD_NEUTRAL)
 
   starboard_azipod = Azipod(STARBOARD_THROTTLE_MIN_VAL,
                             STARBOARD_THROTTLE_MAX_VAL,
                             "Right",
+                            invert_throttle=False,
                             azipod_neutral=STARBOARD_AZIPOD_NEUTRAL)
 
   server = Server(UDP_PORT, events={
