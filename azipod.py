@@ -151,14 +151,14 @@ class Server:
 
   def start(self):
     while True:
-      val, addr = self.socket.recvfrom(4)
-      if len(val) != 4:
+      val, addr = self.socket.recvfrom(3)
+      if len(val) != 3:
         continue
 
       val = int.from_bytes(val, byteorder="little")
-      self.data = val & 0x7fffffff
+      self.data = val & 0x7fffff
 
-      if val & 0x80000000:
+      if val & 0x800000:
         self.events.signal('ON_DATA_STARBOARD')
       else:
         self.events.signal('ON_DATA_PORT')

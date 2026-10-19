@@ -57,8 +57,12 @@ exception: EI2C
 ( *** Networking *** )
 
 \ High 16 bit: Azimut angle
-\ Low  16 bit: Throttle turn
-4 buffer: packet
+\ Low  10 bit: Throttle turn (0-1023)
+\ Mid   9 bit: Angle (0-359)
+\       4 bit: Unused
+\ High  1 bit: 1 if Starboard 0 if port
+\ F|----|AAAAAAAAA|TTTTTTTTTT
+3 buffer: packet
 
 "192.168.0.151" 6589
   constant: SERVER_PORT
@@ -66,22 +70,21 @@ exception: EI2C
 
 : flag ( n -- n )
   STARBOARD if
-    16r80000000 or
+    16r800000 or
   else
-    16r7FFFFFFF and
+    16r7FFFFF and
   then ;
 
 : make-packet ( -- )
-  angle    @ 16 lshift
-  throttle @ 16rFFFF and
-  or
+  angle    @ 16r1FF and 10 lshift
+  throttle @ 16r3FF and or
   flag
   packet ! ;
 
 : send ( -- )
   make-packet
   SERVER_PORT SERVER_IP UDP netcon-connect
-  dup packet 4 netcon-send-buf
+  dup packet 3 netcon-send-buf
   netcon-dispose ;
 
 ( *** Main *** )
