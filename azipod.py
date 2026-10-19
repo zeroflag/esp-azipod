@@ -163,19 +163,20 @@ class Server:
       val, addr = self.socket.recvfrom(4)
       if len(val) != 4:
         continue
+      self._process(Packet(int.from_bytes(val, byteorder="little")))
 
-      self.packet = Packet(int.from_bytes(val, byteorder="little"))
-
-      if self.packet.starboard:
-        delta = self._delta(self.packet.sequence, self.seq_starboard)
-        if self._check_delta(delta):
-          self.seq_starboard = self.packet.sequence
-          self.events.signal('ON_DATA_STARBOARD')
-      else:
-        delta = self._delta(self.packet.sequence, self.seq_port)
-        if self._check_delta(delta):
-          self.seq_port = self.packet.sequence
-          self.events.signal('ON_DATA_PORT')
+  def _process(self, pcaket):
+    self.packet = packet
+    if packet.starboard:
+      delta = self._delta(packet.sequence, self.seq_starboard)
+      if self._check_delta(delta):
+        self.seq_starboard = packet.sequence
+        self.events.signal('ON_DATA_STARBOARD')
+    else:
+      delta = self._delta(packet.sequence, self.seq_port)
+      if self._check_delta(delta):
+        self.seq_port = packet.sequence
+        self.events.signal('ON_DATA_PORT')
 
   def _check_delta(self, delta):
     if delta == 1:
