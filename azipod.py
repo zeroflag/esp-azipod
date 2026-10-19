@@ -148,14 +148,18 @@ class Packet:
     self.sequence = (val >> 19) & 0xFFF
     self.starboard = bool(val & 0x80000000)
 
+  def __str__(self):
+    return "Seq: %d; Throttle: %d; Angle: %d; SB: %s" % (self.sequence, self.throttle, self.angle, self.starboard)
+
 class Server:
-  def __init__(self, port, events=None):
+  def __init__(self, port, events=None, logging=False):
     self.events = Events(events, self)
     self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     self.socket.bind(("0.0.0.0", port))
     self.packet = Packet(0)
     self.seq_starboard = None
     self.seq_port = None
+    self.logging = logging
     print(f"Listening on UDP port {port}...")
 
   def start(self):
@@ -165,8 +169,9 @@ class Server:
         continue
       self._process(Packet(int.from_bytes(val, byteorder="little")))
 
-  def _process(self, pcaket):
+  def _process(self, packet):
     self.packet = packet
+    self._log_packet(packet)
     if packet.starboard:
       delta = self._delta(packet.sequence, self.seq_starboard)
       if self._check_delta(delta):
@@ -178,6 +183,10 @@ class Server:
         self.seq_port = packet.sequence
         self.events.signal('ON_DATA_PORT')
 
+  def _log_packet(self, packet):
+    if self.logging:
+      print(packet)
+    
   def _check_delta(self, delta):
     if delta == 1:
       return True
@@ -212,7 +221,7 @@ def main_loop():
   server = Server(UDP_PORT, events={
     'ON_DATA_STARBOARD': lambda server: starboard_azipod.move_to(server.packet),
     'ON_DATA_PORT': lambda server: port_azipod.move_to(server.packet)
-  })
+  }, logging=True)
 
   try:
     server.start()
