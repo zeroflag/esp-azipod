@@ -15,8 +15,8 @@ PORT_THROTTLE_MAX_VAL = 860
 STARBOARD_THROTTLE_MIN_VAL = 1
 STARBOARD_THROTTLE_MAX_VAL = 700
 
-PORT_AZIPOD_NEUTRAL = 103
-STARBOARD_AZIPOD_NEUTRAL = 103
+PORT_AZIPOD_NEUTRAL = 340
+STARBOARD_AZIPOD_NEUTRAL = 160
 
 VS_DIR="/home/zeroflag/.wine/drive_c/apps/Virtual Sailor"
 CLICK_WAV=os.path.join(VS_DIR, "sounds/Click.wav")
@@ -220,7 +220,7 @@ def main_loop():
   server = Server(UDP_PORT, events={
     'ON_DATA_STARBOARD': lambda server: starboard_azipod.move_to(server.packet),
     'ON_DATA_PORT': lambda server: port_azipod.move_to(server.packet)
-  }, logging=True)
+  }, logging=False)
 
   try:
     server.start()

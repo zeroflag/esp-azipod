@@ -83,7 +83,7 @@ variable: has-change
 
 : make-packet ( -- )
   has-change @ if new-id then
-  id @ 16rFFF and 19 lshift
+  id       @ 16rFFF and 19 lshift
   angle    @ 16r1FF and 10 lshift or
   throttle @ 16r3FF and or
   flag
@@ -114,8 +114,7 @@ variable: has-change
 : poll-potmeter ( -- )
   potmeter-read
   dup throttle @ changed? if
-    print: "Throttle: "
-    dup . cr
+    print: "Throttle: " dup . cr
     throttle !
     TRUE has-change !
   else
@@ -126,9 +125,8 @@ variable: has-change
   as5600-magnet-detected? if
     as5600-read-angle
     dup angle @ <> if
+      print: "Angle: " dup . cr
       angle !
-      print: "Angle: "
-      angle @ . cr
       TRUE has-change !
     else
       drop
