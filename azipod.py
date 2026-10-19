@@ -122,9 +122,9 @@ class Azipod:
       ]
     }
 
-  def move_to(self, value):
-    self.throttle.move_to(value & 0xFFFF) 
-    self.rotary.move_to(value >> 16)
+  def move_to(self, packet):
+    self.throttle.move_to(packet.throttle)
+    self.rotary.move_to(packet.angle)
 
   def close(self):
     self.joy_rotary.close()
@@ -141,24 +141,30 @@ class Azipod:
     joy.write(ecodes.EV_ABS, ecodes.ABS_X, val)
     joy.syn()
 
+class Packet:
+  def __init__(self, val):
+    self.throttle = val & 0x3FF
+    self.angle = (val >> 10) & 0x1FF
+    self.sequence = (val >> 19) & 0xFFF
+    self.starboard = bool(val & 0x80000000)
+
 class Server:
   def __init__(self, port, events=None):
     self.events = Events(events, self)
     self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     self.socket.bind(("0.0.0.0", port))
-    self.data = 0
+    self.packet = Packet(0)
     print(f"Listening on UDP port {port}...")
 
   def start(self):
     while True:
-      val, addr = self.socket.recvfrom(3)
-      if len(val) != 3:
+      val, addr = self.socket.recvfrom(4)
+      if len(val) != 4:
         continue
 
-      val = int.from_bytes(val, byteorder="little")
-      self.data = val & 0x7fffff
+      self.packet = Packet(int.from_bytes(val, byteorder="little"))
 
-      if val & 0x800000:
+      if self.packet.starboard:
         self.events.signal('ON_DATA_STARBOARD')
       else:
         self.events.signal('ON_DATA_PORT')
@@ -180,8 +186,8 @@ def main_loop():
                             azipod_neutral=STARBOARD_AZIPOD_NEUTRAL)
 
   server = Server(UDP_PORT, events={
-    'ON_DATA_STARBOARD': lambda server: starboard_azipod.move_to(server.data),
-    'ON_DATA_PORT': lambda server: port_azipod.move_to(server.data)
+    'ON_DATA_STARBOARD': lambda server: starboard_azipod.move_to(server.packet),
+    'ON_DATA_PORT': lambda server: port_azipod.move_to(server.packet)
   })
 
   try:

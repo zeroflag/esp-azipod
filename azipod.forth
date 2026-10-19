@@ -56,13 +56,14 @@ exception: EI2C
 
 ( *** Networking *** )
 
-\ High 16 bit: Azimut angle
-\ Low  10 bit: Throttle turn (0-1023)
-\ Mid   9 bit: Angle (0-359)
-\       4 bit: Unused
-\ High  1 bit: 1 if Starboard 0 if port
-\ F|----|AAAAAAAAA|TTTTTTTTTT
-3 buffer: packet
+\ Low  0  -  9 bit (10): Throttle turn (0-1023)
+\ Mid  10 - 18 bit ( 9): Angle (0-359)
+\ Mid  19 - 30 bit (12): Sequence number
+\ High 31      bit (1): 1 if Starboard 0 if port
+\ F|SSSSSSSSSSSS|AAAAAAAAA|TTTTTTTTTT
+4 buffer: packet
+
+0 init-variable: sequence
 
 "192.168.0.151" 6589
   constant: SERVER_PORT
@@ -70,21 +71,26 @@ exception: EI2C
 
 : flag ( n -- n )
   STARBOARD if
-    16r800000 or
+    16r80000000 or
   else
-    16r7FFFFF and
+    16r7FFFFFFF and
   then ;
 
+: inc-sequence ( -- )
+  sequence @ 1+ 16rFFF and sequence ! ;
+
 : make-packet ( -- )
-  angle    @ 16r1FF and 10 lshift
+  sequence @ 16rFFF and 19 lshift
+  angle    @ 16r1FF and 10 lshift or
   throttle @ 16r3FF and or
   flag
-  packet ! ;
+  packet !
+  inc-sequence ;
 
 : send ( -- )
   make-packet
   SERVER_PORT SERVER_IP UDP netcon-connect
-  dup packet 3 netcon-send-buf
+  dup packet 4 netcon-send-buf
   netcon-dispose ;
 
 ( *** Main *** )
