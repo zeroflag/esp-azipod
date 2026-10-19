@@ -145,11 +145,11 @@ class Packet:
   def __init__(self, val):
     self.throttle = val & 0x3FF
     self.angle = (val >> 10) & 0x1FF
-    self.sequence = (val >> 19) & 0xFFF
+    self.packet_id = (val >> 19) & 0xFFF
     self.starboard = bool(val & 0x80000000)
 
   def __str__(self):
-    return "Seq: %d; Throttle: %d; Angle: %d; SB: %s" % (self.sequence, self.throttle, self.angle, self.starboard)
+    return "Seq: %d; Throttle: %d; Angle: %d; SB: %s" % (self.packet_id, self.throttle, self.angle, self.starboard)
 
 class Server:
   def __init__(self, port, events=None, logging=False):
@@ -157,8 +157,8 @@ class Server:
     self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     self.socket.bind(("0.0.0.0", port))
     self.packet = Packet(0)
-    self.seq_starboard = None
-    self.seq_port = None
+    self.last_packet_id_starboard = None
+    self.last_packet_id_port = None
     self.logging = logging
     print(f"Listening on UDP port {port}...")
 
@@ -173,14 +173,14 @@ class Server:
     self.packet = packet
     self._log_packet(packet)
     if packet.starboard:
-      delta = self._delta(packet.sequence, self.seq_starboard)
+      delta = self._delta(packet.packet_id, self.last_packet_id_starboard)
       if self._check_delta(delta):
-        self.seq_starboard = packet.sequence
+        self.last_packet_id_starboard = packet.packet_id
         self.events.signal('ON_DATA_STARBOARD')
     else:
-      delta = self._delta(packet.sequence, self.seq_port)
+      delta = self._delta(packet.packet_id, self.last_packet_id_port)
       if self._check_delta(delta):
-        self.seq_port = packet.sequence
+        self.last_packet_id_port = packet.packet_id
         self.events.signal('ON_DATA_PORT')
 
   def _log_packet(self, packet):
@@ -194,7 +194,6 @@ class Server:
       print(f"Missing {delta - 1} packet(s)")
       return True
     else:
-      print("Duplicate, old, or out-of-order packet")
       return False
         
   def _delta(self, seq_num, previous_seq_num):

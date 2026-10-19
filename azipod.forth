@@ -58,12 +58,14 @@ exception: EI2C
 
 \ Low  0  -  9 bit (10): Throttle turn (0-1023)
 \ Mid  10 - 18 bit ( 9): Angle (0-359)
-\ Mid  19 - 30 bit (12): Sequence number
+\ Mid  19 - 30 bit (12): Id (changes only when state changes)
 \ High 31      bit (1): 1 if Starboard 0 if port
 \ F|SSSSSSSSSSSS|AAAAAAAAA|TTTTTTTTTT
 4 buffer: packet
 
-0 init-variable: sequence
+0 init-variable: id
+
+variable: has-change
 
 "192.168.0.151" 6589
   constant: SERVER_PORT
@@ -76,16 +78,16 @@ exception: EI2C
     16r7FFFFFFF and
   then ;
 
-: inc-sequence ( -- )
-  sequence @ 1+ 16rFFF and sequence ! ;
+: new-id ( -- )
+  id @ 1+ 16rFFF and id ! ;
 
 : make-packet ( -- )
-  sequence @ 16rFFF and 19 lshift
+  has-change @ if new-id then
+  id @ 16rFFF and 19 lshift
   angle    @ 16r1FF and 10 lshift or
   throttle @ 16r3FF and or
   flag
-  packet !
-  inc-sequence ;
+  packet ! ;
 
 : send ( -- )
   make-packet
@@ -96,9 +98,7 @@ exception: EI2C
 ( *** Main *** )
 
 3  constant: MIN_CHANGE
-20 constant: DELAY ( ms )
-
-variable: to-send
+50 constant: DELAY ( ms )
 
 : changed? ( a b -- bool ) - abs MIN_CHANGE >= ;
 
@@ -108,7 +108,7 @@ variable: to-send
     print: "Throttle: "
     dup . cr
     throttle !
-    TRUE to-send !
+    TRUE has-change !
   else
     drop
   then ;
@@ -120,7 +120,7 @@ variable: to-send
       angle !
       print: "Angle: "
       angle @ . cr
-      TRUE to-send !
+      TRUE has-change !
     else
       drop
     then
@@ -128,10 +128,10 @@ variable: to-send
 
 : poll-sensors ( -- )
   begin
-    FALSE to-send !
+    FALSE has-change !
     poll-potmeter
     poll-as5600
-    to-send @ if send then
+    send
     DELAY ms
   again ;
 
