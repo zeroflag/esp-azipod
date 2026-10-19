@@ -168,16 +168,16 @@ class Server:
 
       if self.packet.starboard:
         delta = self._delta(self.packet.sequence, self.seq_starboard)
-        if self.check_delta(delta):
+        if self._check_delta(delta):
           self.seq_starboard = self.packet.sequence
           self.events.signal('ON_DATA_STARBOARD')
       else:
         delta = self._delta(self.packet.sequence, self.seq_port)
-        if self.check_delta(delta):
+        if self._check_delta(delta):
           self.seq_port = self.packet.sequence
           self.events.signal('ON_DATA_PORT')
 
-  def check_delta(self, delta):
+  def _check_delta(self, delta):
     if delta == 1:
       return True
     elif 1 < delta < 0x800:
