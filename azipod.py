@@ -154,6 +154,8 @@ class Server:
     self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     self.socket.bind(("0.0.0.0", port))
     self.packet = Packet(0)
+    self.seq_starboard = None
+    self.seq_port = None
     print(f"Listening on UDP port {port}...")
 
   def start(self):
@@ -165,9 +167,30 @@ class Server:
       self.packet = Packet(int.from_bytes(val, byteorder="little"))
 
       if self.packet.starboard:
-        self.events.signal('ON_DATA_STARBOARD')
+        delta = self._delta(self.packet.sequence, self.seq_starboard)
+        if self.check_delta(delta):
+          self.seq_starboard = self.packet.sequence
+          self.events.signal('ON_DATA_STARBOARD')
       else:
-        self.events.signal('ON_DATA_PORT')
+        delta = self._delta(self.packet.sequence, self.seq_port)
+        if self.check_delta(delta):
+          self.seq_port = self.packet.sequence
+          self.events.signal('ON_DATA_PORT')
+
+  def check_delta(self, delta):
+    if delta == 1:
+      return True
+    elif 1 < delta < 0x800:
+      print(f"Missing {delta - 1} packet(s)")
+      return True
+    else:
+      print("Duplicate, old, or out-of-order packet")
+      return False
+        
+  def _delta(self, seq_num, previous_seq_num):
+    if previous_seq_num is None:
+      return 1
+    return (seq_num - previous_seq_num) & 0xFFF
 
   def close(self):
     self.socket.close()
