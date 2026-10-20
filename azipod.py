@@ -5,6 +5,7 @@
 import socket
 from evdev import UInput, AbsInfo, ecodes
 import subprocess
+from time import time as now
 import os
 
 UDP_PORT = 6589
@@ -12,7 +13,7 @@ UDP_PORT = 6589
 PORT_THROTTLE_MIN_VAL = 110
 PORT_THROTTLE_MAX_VAL = 860
 
-STARBOARD_THROTTLE_MIN_VAL = 1
+STARBOARD_THROTTLE_MIN_VAL = 32
 STARBOARD_THROTTLE_MAX_VAL = 700
 
 PORT_AZIPOD_NEUTRAL = 340
@@ -106,6 +107,7 @@ class Azipod:
     self.rotary = Rotary(
       events={'CHANGED' : self._rotary_changed},
       offset=180 - azipod_neutral)
+    self.last_packet = None
 
   def _build_capab(self, min_val, max_val):
     return {
@@ -123,8 +125,29 @@ class Azipod:
     }
 
   def move_to(self, packet):
-    self.throttle.move_to(packet.throttle)
-    self.rotary.move_to(packet.angle)
+    if self._check_delta(packet.packet_id):
+      self.throttle.move_to(packet.throttle)
+      self.rotary.move_to(packet.angle)
+      self.last_packet = packet
+
+  def _check_delta(self, packet_id):
+    delta = self._delta(packet_id)
+    if delta == 1:
+      return True
+    elif 1 < delta < 0x800:
+      print(f"Missing {delta - 1} packet(s)")
+      return True
+    else:
+      return False # out of order / too old
+        
+  def _delta(self, packet_id):
+    if self.last_packet is None:
+      return 1
+    return (packet_id - self.last_packet.packet_id) & 0xFFF
+
+  def is_live(self):
+    return self.last_packet \
+      and (now() - self.last_packet.timestamp()) < 5000
 
   def close(self):
     self.joy_rotary.close()
@@ -147,6 +170,7 @@ class Packet:
     self.angle = (val >> 10) & 0x1FF
     self.packet_id = (val >> 19) & 0xFFF
     self.starboard = bool(val & 0x80000000)
+    self.timestamp = now()
 
   def __str__(self):
     return "Seq: %d; Throttle: %d; Angle: %d; SB: %s" % (self.packet_id, self.throttle, self.angle, self.starboard)
@@ -157,8 +181,6 @@ class Server:
     self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     self.socket.bind(("0.0.0.0", port))
     self.packet = Packet(0)
-    self.last_packet_id_starboard = None
-    self.last_packet_id_port = None
     self.logging = logging
     print(f"Listening on UDP port {port}...")
 
@@ -173,61 +195,53 @@ class Server:
     self.packet = packet
     self._log_packet(packet)
     if packet.starboard:
-      delta = self._delta(packet.packet_id, self.last_packet_id_starboard)
-      if self._check_delta(delta):
-        self.last_packet_id_starboard = packet.packet_id
-        self.events.signal('ON_DATA_STARBOARD')
+      self.events.signal('ON_DATA_STARBOARD')
     else:
-      delta = self._delta(packet.packet_id, self.last_packet_id_port)
-      if self._check_delta(delta):
-        self.last_packet_id_port = packet.packet_id
-        self.events.signal('ON_DATA_PORT')
+      self.events.signal('ON_DATA_PORT')
 
   def _log_packet(self, packet):
     if self.logging:
       print(packet)
     
-  def _check_delta(self, delta):
-    if delta == 1:
-      return True
-    elif 1 < delta < 0x800:
-      print(f"Missing {delta - 1} packet(s)")
-      return True
-    else:
-      return False
-        
-  def _delta(self, seq_num, previous_seq_num):
-    if previous_seq_num is None:
-      return 1
-    return (seq_num - previous_seq_num) & 0xFFF
-
   def close(self):
     self.socket.close()
 
-def main_loop():
-  port_azipod      = Azipod(PORT_THROTTLE_MIN_VAL,
+class AzipodPair:
+  def __init__(self):
+    self.port_azipod      = Azipod(PORT_THROTTLE_MIN_VAL,
                             PORT_THROTTLE_MAX_VAL,
                             "Left",
                             invert_throttle=True,
                             azipod_neutral=PORT_AZIPOD_NEUTRAL)
-
-  starboard_azipod = Azipod(STARBOARD_THROTTLE_MIN_VAL,
+    self.starboard_azipod = Azipod(STARBOARD_THROTTLE_MIN_VAL,
                             STARBOARD_THROTTLE_MAX_VAL,
                             "Right",
                             invert_throttle=False,
                             azipod_neutral=STARBOARD_AZIPOD_NEUTRAL)
 
+  def on_starboard(self, packet):
+    self.starboard_azipod.move_to(packet)
+
+  def on_port(self, packet):
+    self.port_azipod.move_to(packet)
+
+  def close(self):
+    self.port_azipod.close()
+    self.starboard_azipod.close()
+
+def main_loop():
+  azipods = AzipodPair()
+
   server = Server(UDP_PORT, events={
-    'ON_DATA_STARBOARD': lambda server: starboard_azipod.move_to(server.packet),
-    'ON_DATA_PORT': lambda server: port_azipod.move_to(server.packet)
+    'ON_DATA_STARBOARD': lambda server: azipods.on_starboard(server.packet),
+    'ON_DATA_PORT': lambda server: azipods.on_port(server.packet)
   }, logging=False)
 
   try:
     server.start()
   finally:
     server.close()
-    port_azipod.close()
-    starboard_azipod.close()
+    azipods.close()
   
 if __name__ == '__main__':
   main_loop()
