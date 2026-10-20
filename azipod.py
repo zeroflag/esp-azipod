@@ -32,7 +32,7 @@ class Events:
       self.callbacks[event](self.sender)
 
 class Throttle:
-  def __init__(self, min_val, max_val, invert=False, deadband=30, events=None):
+  def __init__(self, min_val, max_val, invert=False, deadband=25, events=None):
     self.min_val = min_val
     self.max_val = max_val
     self.mid_val = (max_val - min_val) // 2 + min_val
@@ -95,9 +95,11 @@ class Rotary:
     return max(0, min(val, 359))
 
 class Azipod:
-  def __init__(self, min_val, max_val, suffix, invert_throttle=False, azipod_neutral = 180):
+  def __init__(self, min_val, max_val, suffix, invert_throttle=False, azipod_neutral = 180, replica_throttle=False):
     self.joy_rotary = UInput(self._build_capab(0, 359), name="ESP Azipod %s" % suffix)
     self.joy_throttle = UInput(self._build_capab(min_val, max_val), name="ESP Throttle %s" % suffix)
+    self.joy_throttle_replica = UInput(self._build_capab(min_val, max_val), \
+                                       name="ESP Throttle %s REPLICA" % suffix) if replica_throttle else None
     self.throttle = Throttle(
       min_val=min_val,
       max_val=max_val,
@@ -155,6 +157,8 @@ class Azipod:
 
   def _throttle_changed(self, sender):
     self._set_joy_x(self.joy_throttle, sender.value)
+    if self.joy_throttle_replica:
+      self._set_joy_x(self.joy_throttle_replica, sender.value)
 
   def _rotary_changed(self, sender):
     self._set_joy_x(self.joy_rotary, sender.value)
@@ -212,7 +216,8 @@ class AzipodPair:
                             PORT_THROTTLE_MAX_VAL,
                             "Left",
                             invert_throttle=True,
-                            azipod_neutral=PORT_AZIPOD_NEUTRAL)
+                            azipod_neutral=PORT_AZIPOD_NEUTRAL,
+                            replica_throttle=True)
     self.starboard_azipod = Azipod(STARBOARD_THROTTLE_MIN_VAL,
                             STARBOARD_THROTTLE_MAX_VAL,
                             "Right",

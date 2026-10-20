@@ -6,6 +6,8 @@ JOY_AZPIPOD_RIGHT="ESP Azipod Right"
 JOY_THROTTLE_LEFT="ESP Throttle Left"
 JOY_THROTTLE_RIGHT="ESP Throttle Right"
 
+JOY_THROTTLE_REPLICA="ESP Throttle Left REPLICA"
+
 VS_DIR="$HOME/.wine/drive_c/apps/Virtual Sailor"
 UINPUT="/dev/uinput"
 THROTTLE_COMMAND=(python azipod.py)
@@ -48,7 +50,8 @@ for joystick in \
   "$JOY_AZPIPOD_LEFT" \
   "$JOY_AZPIPOD_RIGHT" \
   "$JOY_THROTTLE_LEFT" \
-  "$JOY_THROTTLE_RIGHT"
+  "$JOY_THROTTLE_RIGHT" \
+  "$JOY_THROTTLE_REPLICA"
 do
   while ! xinput list --name-only | grep -qx "$joystick"; do
     sleep 0.05
