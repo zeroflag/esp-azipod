@@ -5,7 +5,7 @@
 import socket
 from evdev import UInput, AbsInfo, ecodes
 import subprocess
-from time import time as now
+from time import time as now, asctime
 import os
 
 UDP_PORT = 6589
@@ -205,7 +205,7 @@ class Server:
 
   def _log_packet(self, packet):
     if self.logging:
-      print(packet)
+      print("[%s] - %s" % (asctime(), packet))
     
   def close(self):
     self.socket.close()

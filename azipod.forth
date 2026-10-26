@@ -107,13 +107,14 @@ variable: has-change
 
 ( *** Main *** )
 
-3  constant: MIN_CHANGE
-50 constant: DELAY ( ms )
+3    constant: MIN_CHANGE
+50   constant: DELAY ( ms )
+5000 constant: IDLE_TIMEOUT ( ms )
 
 : changed? ( a b -- bool ) - abs MIN_CHANGE >= ;
 : should-send? ( -- bool )
   ms@ last-change-ms @ -
-  dup 60000 < swap 0< or ;
+  dup IDLE_TIMEOUT < swap 0< or ;
 
 : note-change ( -- )
   TRUE has-change !
