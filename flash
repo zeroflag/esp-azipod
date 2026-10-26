@@ -1,0 +1,9 @@
+#!/bin/bash
+
+PUNYFORTH="$HOME/proj/punyforth"
+ESPAZIPOD=`pwd`
+PORT="/dev/ttyUSB0"
+
+cd "$PUNYFORTH/arch/esp8266/bin"
+
+python flash.py --main "$ESPAZIPOD/azipod.forth" "$PORT"
