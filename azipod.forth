@@ -64,6 +64,7 @@ exception: EI2C
 4 buffer: packet
 
 0 init-variable: id
+ms@ init-variable: last-change-ms
 
 variable: has-change
 
@@ -110,13 +111,20 @@ variable: has-change
 50 constant: DELAY ( ms )
 
 : changed? ( a b -- bool ) - abs MIN_CHANGE >= ;
+: should-send? ( -- bool )
+  ms@ last-change-ms @ -
+  dup 60000 < swap 0< or ;
+
+: note-change ( -- )
+  TRUE has-change !
+  ms@ last-change-ms ! ;
 
 : poll-potmeter ( -- )
   potmeter-read
   dup throttle @ changed? if
     print: "Throttle: " dup . cr
     throttle !
-    TRUE has-change !
+    note-change
   else
     drop
   then ;
@@ -127,7 +135,7 @@ variable: has-change
     dup angle @ <> if
       print: "Angle: " dup . cr
       angle !
-      TRUE has-change !
+      note-change
     else
       drop
     then
@@ -147,7 +155,7 @@ variable: has-change
     FALSE has-change !
     poll-potmeter
     poll-as5600
-    send
+    should-send? if send then
     DELAY ms
   again ;
 
