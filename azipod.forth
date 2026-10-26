@@ -90,20 +90,11 @@ variable: has-change
   flag
   packet ! ;
 
-: _send ( -- )
+: send ( -- )
   make-packet
   SERVER_PORT SERVER_IP UDP netcon-connect
   dup packet 4 netcon-send-buf
   netcon-dispose ;
-
-: send ( -- )
-  ['] _send catch
-  case
-    ENETCON of
-      println: 'Network communication error.'
-    endof
-    throw
-  endcase ;
 
 ( *** Main *** )
 
@@ -130,7 +121,7 @@ variable: has-change
     drop
   then ;
 
-: _poll-as5600 ( -- )
+: poll-as5600 ( -- )
   as5600-magnet-detected? if
     as5600-read-angle
     dup angle @ <> if
@@ -142,23 +133,12 @@ variable: has-change
     then
   then ;
 
-: poll-as5600 ( -- )
-  ['] _poll-as5600 catch
-  case
-    EI2C of
-      println: 'I2C communication error.'
-    endof
-    throw
-  endcase ;
-
 : poll-sensors ( -- )
-  begin
-    FALSE has-change !
-    poll-potmeter
-    poll-as5600
-    should-send? if send then
-    DELAY ms
-  again ;
+  FALSE has-change !
+  poll-potmeter
+  poll-as5600
+  should-send? if send then
+  DELAY ms ;
 
 : name ( -- s )
   STARBOARD if
@@ -171,6 +151,17 @@ variable: has-change
   cr name type
   println: " ready."
   as5600-init
-  poll-sensors ;
+  begin
+    ['] poll-sensors catch
+    case
+      EI2C of
+        println: 'I2C communication error.'
+      endof
+      ENETCON of
+        println: 'Network communication error.'
+      endof
+      throw
+    endcase
+  again ;
 
 main
