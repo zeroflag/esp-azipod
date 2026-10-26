@@ -63,7 +63,8 @@ exception: EI2C
 \ F|SSSSSSSSSSSS|AAAAAAAAA|TTTTTTTTTT
 4 buffer: packet
 
-0 init-variable: id
+0   init-variable: id
+0   init-variable: socket
 ms@ init-variable: last-change-ms
 
 variable: has-change
@@ -90,11 +91,13 @@ variable: has-change
   flag
   packet ! ;
 
+: connect ( -- )
+  socket @ 0<> if socket @ netcon-dispose then
+  SERVER_PORT SERVER_IP UDP netcon-connect socket ! ;
+
 : send ( -- )
   make-packet
-  SERVER_PORT SERVER_IP UDP netcon-connect
-  dup packet 4 netcon-send-buf
-  netcon-dispose ;
+  socket @ packet 4 netcon-send-buf ;
 
 ( *** Main *** )
 
@@ -151,6 +154,7 @@ variable: has-change
   cr name type
   println: " ready."
   as5600-init
+  connect
   begin
     ['] poll-sensors catch
     case
@@ -159,6 +163,7 @@ variable: has-change
       endof
       ENETCON of
         println: 'Network communication error.'
+        connect
       endof
       throw
     endcase
