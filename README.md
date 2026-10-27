@@ -14,7 +14,7 @@ Azipod Build for Virtual Sailor NG
 KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="input", MODE:="0660", OPTIONS+="static_node=uinput"
 ```
 
-2. Add your user to the `input` group`
+2. Add your user to the `input` group
 
 ```bash
 sudo usermod -aG input $USER
