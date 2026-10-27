@@ -22,16 +22,6 @@ if [ ! -c "$UINPUT" ]; then
   exit 1
 fi
 
-sudo chgrp input "$UINPUT" || {
-  echo "Error: failed to change group of $UINPUT" >&2
-  exit 1
-}
-
-sudo chmod 660 "$UINPUT" || {
-  echo "Error: failed to change permissions on $UINPUT" >&2
-  exit 1
-}
-
 "${THROTTLE_COMMAND[@]}" &
 THROTTLE_PID=$!
 
