@@ -12,9 +12,11 @@
 #include <sys/ioctl.h>
 #include <linux/uinput.h>
 #include <linux/input-event-codes.h>
-#include "miniaudio/miniaudio.h"
 #include <signal.h>
 #include <errno.h>
+#include <libgen.h>
+#include <limits.h>
+#include "miniaudio/miniaudio.h"
 
 #define DEVICE "/dev/uinput"
 #define MAX_LINE_LEN 512
@@ -133,7 +135,7 @@ int listen_on(uint16_t port) {
     exit(EXIT_FAILURE);
   }
 
-  printf("Server listening on port %d... Waiting for packet.\n", port);
+  printf("Server listening on port %d...\n", port);
   return sock;
 }
 
@@ -507,7 +509,7 @@ void print_conf(const struct azipod_conf_t cfg) {
   printf(" * sb_throttle_max   = %d\n", cfg.sb_throttle_max);
   printf(" * sb_throttle_mid   = %d\n", cfg.sb_throttle_mid);
   printf(" * neutral_snd       = %s\n", cfg.neutral_snd);
-  printf(" * boundary_snd       = %s\n", cfg.boundary_snd);
+  printf(" * boundary_snd      = %s\n", cfg.boundary_snd);
 }
 
 void register_signal() {
@@ -519,11 +521,37 @@ void register_signal() {
   sigaction(SIGTERM, &sa, NULL);
 }
 
+int locate_config(char *config_path, size_t size) {
+  char path[PATH_MAX];
+
+  ssize_t len = readlink("/proc/self/exe", path, sizeof(path) - 1);
+  if (len < 0) {
+    perror("readlink");
+    return 0;
+  }
+
+  path[len] = '\0';
+
+  int n = snprintf(config_path, size, "%s/azipod.cfg", dirname(path));
+  if (n < 0 || (size_t)n >= size) {
+    fprintf(stderr, "Config path is too long\n");
+    return 0;
+  }
+
+  return 1;
+}
+
 void initialize() {
   register_signal();
 
-  if (!read_config(&conf, "azipod.cfg")) {
-    fprintf(stderr, "azipod.cfg not found");
+  char config_path[PATH_MAX];
+  if (!locate_config(config_path, sizeof(config_path))) {
+    fprintf(stderr, "Cannot locate executable path.");
+    exit(EXIT_FAILURE);
+  }
+
+  if (!read_config(&conf, config_path)) {
+    fprintf(stderr, "Config file azipod.cfg not found.");
     exit(EXIT_FAILURE);
   }
   print_conf(conf);
