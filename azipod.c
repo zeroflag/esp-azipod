@@ -56,9 +56,11 @@ struct azipod_conf_t {
   int port_throttle_min;
   int port_throttle_max;
   int port_throttle_mid;
+  int port_throttle_deadband;
   int sb_throttle_min;
   int sb_throttle_max;
   int sb_throttle_mid;
+  int sb_throttle_deadband;
   char neutral_snd[MAX_LINE_LEN];
   char boundary_snd[MAX_LINE_LEN];
 } conf;
@@ -234,17 +236,17 @@ void update_state(struct azipod_state_t *state, struct packet_t packet) {
     uint8_t pct = throttle_pct(throttle, state);
     if (emit(select_joy(THROTTLE, state->side), pct)) {
       state->throttle_value = throttle;
-      printf("%s Throttle %u (%u%%)\n",
+      printf("%s Throttle: %u (%u%%)\n",
              state->side == PORT_SIDE ? "Port" : "Starboard",
              throttle, pct);
     }
     if (state->side == PORT_SIDE
         && replicate == STARBOARD_SIDE) {
-      printf("Replicating to Starboard Throttle %u%%\n", pct);
+      printf("Replicating to Starboard Throttle: %u%%\n", pct);
       emit(joy_sb_throttle, pct);
     } else if (state->side == STARBOARD_SIDE
              && replicate == PORT_SIDE) {
-      printf("Replicating to Port Throttle %u%%\n", pct);
+      printf("Replicating to Port Throttle: %u%%\n", pct);
       emit(joy_port_throttle, pct);
     }
 
@@ -455,8 +457,16 @@ int read_config(struct azipod_conf_t *cfg, char *path) {
 
   cfg->neutral_snd[0] = 0;
   cfg->boundary_snd[0] = 0;
-  cfg->port_throttle_mid = -1;
+
+  cfg->sb_throttle_min = 0;
+  cfg->sb_throttle_max = 1023;
   cfg->sb_throttle_mid = -1;
+  cfg->sb_throttle_deadband = 0;
+
+  cfg->port_throttle_min = 0;
+  cfg->port_throttle_max = 1023;
+  cfg->port_throttle_mid = -1;
+  cfg->port_throttle_deadband = 0;
 
   char line[MAX_LINE_LEN];
   while (fgets(line, sizeof(line), file)) {
@@ -474,12 +484,16 @@ int read_config(struct azipod_conf_t *cfg, char *path) {
       cfg->port_throttle_max = atoi(trim_key(p));
     } else if (has_key(p, "port_throttle_mid")) {
       cfg->port_throttle_mid = atoi(trim_key(p));
+    } else if (has_key(p, "port_throttle_deadband")) {
+      cfg->port_throttle_deadband = atoi(trim_key(p));
     } else if (has_key(p, "sb_throttle_min")) {
       cfg->sb_throttle_min = atoi(trim_key(p));
     } else if (has_key(p, "sb_throttle_max")) {
       cfg->sb_throttle_max = atoi(trim_key(p));
     } else if (has_key(p, "sb_throttle_mid")) {
-      cfg->sb_throttle_mid = atoi(trim_key(p));
+      cfg->sb_throttle_max = atoi(trim_key(p));
+    } else if (has_key(p, "sb_throttle_deadband")) {
+      cfg->sb_throttle_deadband = atoi(trim_key(p));
     } else if (has_key(p, "neutral_snd")) {
       snprintf(cfg->neutral_snd, sizeof(cfg->neutral_snd), "%s", trim_key(p));
     } else if (has_key(p, "boundary_snd")) {
@@ -502,14 +516,16 @@ int read_config(struct azipod_conf_t *cfg, char *path) {
 
 void print_conf(const struct azipod_conf_t cfg) {
   printf("Configuration:\n");
-  printf(" * port_throttle_min = %d\n", cfg.port_throttle_min);
-  printf(" * port_throttle_max = %d\n", cfg.port_throttle_max);
-  printf(" * port_throttle_mid = %d\n", cfg.port_throttle_mid);
-  printf(" * sb_throttle_min   = %d\n", cfg.sb_throttle_min);
-  printf(" * sb_throttle_max   = %d\n", cfg.sb_throttle_max);
-  printf(" * sb_throttle_mid   = %d\n", cfg.sb_throttle_mid);
-  printf(" * neutral_snd       = %s\n", cfg.neutral_snd);
-  printf(" * boundary_snd      = %s\n", cfg.boundary_snd);
+  printf(" * port_throttle_min      = %d\n", cfg.port_throttle_min);
+  printf(" * port_throttle_max      = %d\n", cfg.port_throttle_max);
+  printf(" * port_throttle_mid      = %d\n", cfg.port_throttle_mid);
+  printf(" * port_throttle_deadband = %d\n", cfg.port_throttle_deadband);
+  printf(" * sb_throttle_min        = %d\n", cfg.sb_throttle_min);
+  printf(" * sb_throttle_max        = %d\n", cfg.sb_throttle_max);
+  printf(" * sb_throttle_mid        = %d\n", cfg.sb_throttle_mid);
+  printf(" * sb_throttle_deadband   = %d\n", cfg.sb_throttle_deadband);
+  printf(" * neutral_snd            = %s\n", cfg.neutral_snd);
+  printf(" * boundary_snd           = %s\n", cfg.boundary_snd);
 }
 
 void register_signal() {
@@ -571,7 +587,7 @@ void create_azipods() {
   port_azipod_state.throttle_is_max = false;
   port_azipod_state.throttle_is_min = false;
   port_azipod_state.throttle_invert = true;
-  port_azipod_state.throttle_deadband = 20; // TODO config
+  port_azipod_state.throttle_deadband = conf.port_throttle_deadband;
   port_azipod_state.rotary_offset = 180 - 340;
   port_azipod_state.rotary_angle = 180;
 
@@ -585,7 +601,7 @@ void create_azipods() {
   starboard_azipod_state.throttle_is_max = false;
   starboard_azipod_state.throttle_is_min = false;
   starboard_azipod_state.throttle_invert = false;
-  starboard_azipod_state.throttle_deadband = 20;
+  starboard_azipod_state.throttle_deadband = conf.sb_throttle_deadband;
   starboard_azipod_state.rotary_offset = 180 - 160;
   starboard_azipod_state.rotary_angle = 180;
 }
