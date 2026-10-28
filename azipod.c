@@ -192,10 +192,21 @@ int select_joy(enum Joy joy_type, enum Side side) {
   }
 }
 
+uint8_t scale_to_pct(uint16_t value, uint16_t min_val, uint16_t max_val) {
+  return ((uint32_t)(value - min_val) * 100) / (max_val - min_val);
+}
+
 uint16_t may_invert(uint16_t val, const struct azipod_state_t *state) {
   return state->throttle_invert
     ? state->throttle_min_val + state->throttle_max_val - val
     : val;
+}
+
+uint8_t throttle_pct(uint16_t val, const struct azipod_state_t *state) {
+  return scale_to_pct(
+    may_invert(val, state),
+    state->throttle_min_val,
+    state->throttle_max_val);
 }
 
 void update_state(struct azipod_state_t *state, struct packet_t packet) {
@@ -207,11 +218,11 @@ void update_state(struct azipod_state_t *state, struct packet_t packet) {
   state->throttle_is_neutral = neutral;
 
   if (throttle != state->throttle_value) {
-    if (emit(select_joy(THROTTLE, state->side), may_invert(throttle, state))) {
+    if (emit(select_joy(THROTTLE, state->side), throttle_pct(throttle, state))) {
       state->throttle_value = throttle;
-      printf("%s Throttle %u\n",
+      printf("%s Throttle %u (%u%%)\n",
              state->side == PORT_SIDE ? "Port" : "Starboard",
-             may_invert(throttle, state));
+             may_invert(throttle, state), throttle_pct(throttle, state));
     }
   }
 
@@ -359,22 +370,9 @@ void destroy_joys() {
  destroy_joy(joy_sb_rotary);
 }
 
-void init_joys(int port_throttle_min,
-               int port_throttle_max,
-               int sb_throttle_min,
-               int sb_throttle_max)
-{
-  joy_port_throttle = create_joystick(
-    "ESP Throttle Left",
-    port_throttle_min,
-    port_throttle_max,
-    mid_val(port_throttle_min, port_throttle_max));
-
-  joy_sb_throttle = create_joystick(
-    "ESP Throttle Right",
-    sb_throttle_min,
-    sb_throttle_max,
-    mid_val(sb_throttle_min, sb_throttle_max));
+void init_joys() {
+  joy_port_throttle = create_joystick("ESP Throttle Left", 0, 100, 50);
+  joy_sb_throttle = create_joystick("ESP Throttle Right", 0, 100, 50);
 
   joy_port_rotary = create_joystick("ESP Azipod Left", 0, 359, 180);
   joy_sb_rotary = create_joystick("ESP Azipod Right", 0, 359, 180);
@@ -469,23 +467,20 @@ void register_signal() {
   sigaction(SIGTERM, &sa, NULL);
 }
 
-int main() {    
+void initialize() {
   register_signal();
 
   if (!read_config(&conf, "azipod.cfg")) {
     fprintf(stderr, "azipod.cfg not found");
     exit(EXIT_FAILURE);
   }
-
   print_conf(conf);
 
-  init_joys(conf.port_throttle_min,
-            conf.port_throttle_max,
-            conf.sb_throttle_min,
-            conf.sb_throttle_max);
-
+  init_joys();
   audio_initialized = audio_init();
-  
+}
+
+void create_azipods() {
   port_azipod_state.side = PORT_SIDE;
   port_azipod_state.last_packet_id = UNINITIALIZED_ID;
   port_azipod_state.throttle_min_val = conf.port_throttle_min;
@@ -509,9 +504,12 @@ int main() {
   starboard_azipod_state.throttle_deadband = 25;
   starboard_azipod_state.rotary_offset = 180 - 160;
   starboard_azipod_state.rotary_angle = 180;
-  
-  start_server(UDP_PORT);
+}
 
+int main() {    
+  initialize(); 
+  create_azipods();  
+  start_server(UDP_PORT);
   cleanup();
   return 0;
 }
