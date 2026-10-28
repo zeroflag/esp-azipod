@@ -53,8 +53,10 @@ struct azipod_state_t {
 struct azipod_conf_t {
   int port_throttle_min;
   int port_throttle_max;
+  int port_throttle_mid;
   int sb_throttle_min;
   int sb_throttle_max;
+  int sb_throttle_mid;
   char neutral_snd[MAX_LINE_LEN];
   char boundary_snd[MAX_LINE_LEN];
 } conf;
@@ -68,6 +70,7 @@ int sock = -1;
 ma_engine audio_engine;
 int audio_initialized = 0;
 
+// TODO config
 enum Side replicate = STARBOARD_SIDE;
 
 void handle_signal(int signal) {
@@ -104,17 +107,17 @@ void audio_cleanup(void) {
 }
 
 int make_socket() {
-  sock = socket(AF_INET, SOCK_DGRAM, 0);        
+  sock = socket(AF_INET, SOCK_DGRAM, 0);
   if (sock < 0) {
     perror("Socket creation failed");
     exit(EXIT_FAILURE);
   }
-  return sock; 
+  return sock;
 }
 
 void make_address(uint16_t port, struct sockaddr_in *address) {
   memset(address, 0, sizeof(*address));
-  address->sin_family = AF_INET; 
+  address->sin_family = AF_INET;
   address->sin_addr.s_addr = htonl(INADDR_ANY);
   address->sin_port = htons(port);
 }
@@ -122,7 +125,7 @@ void make_address(uint16_t port, struct sockaddr_in *address) {
 int listen_on(uint16_t port) {
   struct sockaddr_in address;
   make_address(port, &address);
-  
+
   sock = make_socket();
   if (bind(sock, (struct sockaddr*)&address, sizeof(address)) < 0) {
     perror("Bind failed");
@@ -151,9 +154,9 @@ uint16_t throttle_clamp(uint16_t val, const struct azipod_state_t *state) {
   uint16_t distance = new_val > state->throttle_mid_val
     ? new_val - state->throttle_mid_val
     : state->throttle_mid_val - new_val;
-  
+
   if (distance <= state->throttle_deadband) {
-    new_val = state->throttle_mid_val;  
+    new_val = state->throttle_mid_val;
   }
   return new_val;
 }
@@ -191,29 +194,30 @@ int emit(int joy, int value) {
 
 int select_joy(enum Joy joy_type, enum Side side) {
   if (joy_type == THROTTLE) {
-    return side == PORT_SIDE ? joy_port_throttle : joy_sb_throttle; 
+    return side == PORT_SIDE ? joy_port_throttle : joy_sb_throttle;
   } else {
-    return side == PORT_SIDE ? joy_port_rotary : joy_sb_rotary; 
+    return side == PORT_SIDE ? joy_port_rotary : joy_sb_rotary;
   }
 }
 
-uint8_t scale_to_pct(uint16_t value, uint16_t min_val, uint16_t max_val) {
-  return ((uint32_t)(value - min_val) * 100
-    + (max_val - min_val) / 2)
-    / (max_val - min_val);
-}
-
-uint16_t may_invert(uint16_t val, const struct azipod_state_t *state) {
-  return state->throttle_invert
-    ? state->throttle_min_val + state->throttle_max_val - val
-    : val;
+uint8_t scale_to_pct(uint16_t value, uint16_t min_val,
+                     uint16_t mid_val, uint16_t max_val) {
+  if (value <= mid_val) {
+    return (uint32_t)(value - min_val) * 50
+      / (mid_val - min_val);
+  } else {
+    return 50 + (uint32_t)(value - mid_val) * 50
+      / (max_val - mid_val);
+  }
 }
 
 uint8_t throttle_pct(uint16_t val, const struct azipod_state_t *state) {
-  return scale_to_pct(
-    may_invert(val, state),
+  uint8_t pct = scale_to_pct(
+    val,
     state->throttle_min_val,
+    state->throttle_mid_val,
     state->throttle_max_val);
+  return state->throttle_invert ? 100 - pct : pct;
 }
 
 void update_state(struct azipod_state_t *state, struct packet_t packet) {
@@ -438,6 +442,7 @@ char *trim_key(char *p) {
   return p;
 }
 
+// TODO validation
 int read_config(struct azipod_conf_t *cfg, char *path) {
   FILE *file = fopen(path, "r");
 
@@ -448,6 +453,8 @@ int read_config(struct azipod_conf_t *cfg, char *path) {
 
   cfg->neutral_snd[0] = 0;
   cfg->boundary_snd[0] = 0;
+  cfg->port_throttle_mid = -1;
+  cfg->sb_throttle_mid = -1;
 
   char line[MAX_LINE_LEN];
   while (fgets(line, sizeof(line), file)) {
@@ -463,10 +470,14 @@ int read_config(struct azipod_conf_t *cfg, char *path) {
       cfg->port_throttle_min = atoi(trim_key(p));
     } else if (has_key(p, "port_throttle_max")) {
       cfg->port_throttle_max = atoi(trim_key(p));
+    } else if (has_key(p, "port_throttle_mid")) {
+      cfg->port_throttle_mid = atoi(trim_key(p));
     } else if (has_key(p, "sb_throttle_min")) {
       cfg->sb_throttle_min = atoi(trim_key(p));
     } else if (has_key(p, "sb_throttle_max")) {
       cfg->sb_throttle_max = atoi(trim_key(p));
+    } else if (has_key(p, "sb_throttle_mid")) {
+      cfg->sb_throttle_mid = atoi(trim_key(p));
     } else if (has_key(p, "neutral_snd")) {
       snprintf(cfg->neutral_snd, sizeof(cfg->neutral_snd), "%s", trim_key(p));
     } else if (has_key(p, "boundary_snd")) {
@@ -474,6 +485,13 @@ int read_config(struct azipod_conf_t *cfg, char *path) {
     } else {
       fprintf(stderr, "Invalid configuration: %s\n", p);
     }
+  }
+
+  if (cfg->sb_throttle_mid == -1) {
+    cfg->sb_throttle_mid = mid_val(cfg->sb_throttle_min, cfg->sb_throttle_max);
+  }
+  if (cfg->port_throttle_mid == -1) {
+    cfg->port_throttle_mid = mid_val(cfg->port_throttle_min, cfg->port_throttle_max);
   }
 
   fclose(file);
@@ -484,9 +502,12 @@ void print_conf(const struct azipod_conf_t cfg) {
   printf("Configuration:\n");
   printf(" * port_throttle_min = %d\n", cfg.port_throttle_min);
   printf(" * port_throttle_max = %d\n", cfg.port_throttle_max);
+  printf(" * port_throttle_mid = %d\n", cfg.port_throttle_mid);
   printf(" * sb_throttle_min   = %d\n", cfg.sb_throttle_min);
   printf(" * sb_throttle_max   = %d\n", cfg.sb_throttle_max);
+  printf(" * sb_throttle_mid   = %d\n", cfg.sb_throttle_mid);
   printf(" * neutral_snd       = %s\n", cfg.neutral_snd);
+  printf(" * boundary_snd       = %s\n", cfg.boundary_snd);
 }
 
 void register_signal() {
@@ -516,13 +537,13 @@ void create_azipods() {
   port_azipod_state.last_packet_id = UNINITIALIZED_ID;
   port_azipod_state.throttle_min_val = conf.port_throttle_min;
   port_azipod_state.throttle_max_val = conf.port_throttle_max;
-  port_azipod_state.throttle_mid_val = mid_val(conf.port_throttle_min, conf.port_throttle_max);
+  port_azipod_state.throttle_mid_val = conf.port_throttle_mid;
   port_azipod_state.throttle_value = port_azipod_state.throttle_mid_val;
   port_azipod_state.throttle_is_neutral = true;
   port_azipod_state.throttle_is_max = false;
   port_azipod_state.throttle_is_min = false;
   port_azipod_state.throttle_invert = true;
-  port_azipod_state.throttle_deadband = 20;
+  port_azipod_state.throttle_deadband = 20; // TODO config
   port_azipod_state.rotary_offset = 180 - 340;
   port_azipod_state.rotary_angle = 180;
 
@@ -530,7 +551,7 @@ void create_azipods() {
   starboard_azipod_state.last_packet_id = UNINITIALIZED_ID;
   starboard_azipod_state.throttle_min_val = conf.sb_throttle_min;
   starboard_azipod_state.throttle_max_val = conf.sb_throttle_max;
-  starboard_azipod_state.throttle_mid_val = mid_val(conf.sb_throttle_min, conf.sb_throttle_max);
+  starboard_azipod_state.throttle_mid_val = conf.sb_throttle_mid;
   starboard_azipod_state.throttle_value = starboard_azipod_state.throttle_mid_val;
   starboard_azipod_state.throttle_is_neutral = true;
   starboard_azipod_state.throttle_is_max = false;
@@ -541,9 +562,9 @@ void create_azipods() {
   starboard_azipod_state.rotary_angle = 180;
 }
 
-int main() {    
-  initialize(); 
-  create_azipods();  
+int main() {
+  initialize();
+  create_azipods();
   start_server(UDP_PORT);
   cleanup();
   return 0;
