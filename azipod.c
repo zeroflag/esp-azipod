@@ -23,8 +23,8 @@ volatile sig_atomic_t running = 1;
 
 const uint16_t UDP_PORT = 6589;
 const uint32_t UNINITIALIZED_ID = 0xFFFFFFFF;
-enum Side { PORT_SIDE = 1, STARBOARD_SIDE = 2 };
-enum Joy  { THROTTLE = 1, ROTARY = 2 };
+enum Side { PORT_SIDE, STARBOARD_SIDE, NONE };
+enum Joy  { THROTTLE, ROTARY };
 
 struct packet_t {
   uint16_t throttle;
@@ -67,6 +67,8 @@ int joy_sb_rotary = -1;
 int sock = -1;
 ma_engine audio_engine;
 int audio_initialized = 0;
+
+enum Side replicate = STARBOARD_SIDE;
 
 void handle_signal(int signal) {
   (void)signal;
@@ -196,7 +198,9 @@ int select_joy(enum Joy joy_type, enum Side side) {
 }
 
 uint8_t scale_to_pct(uint16_t value, uint16_t min_val, uint16_t max_val) {
-  return ((uint32_t)(value - min_val) * 100) / (max_val - min_val);
+  return ((uint32_t)(value - min_val) * 100
+    + (max_val - min_val) / 2)
+    / (max_val - min_val);
 }
 
 uint16_t may_invert(uint16_t val, const struct azipod_state_t *state) {
@@ -228,6 +232,16 @@ void update_state(struct azipod_state_t *state, struct packet_t packet) {
              state->side == PORT_SIDE ? "Port" : "Starboard",
              throttle, pct);
     }
+    if (state->side == PORT_SIDE
+        && replicate == STARBOARD_SIDE) {
+      printf("Replicating to Starboard Throttle %u%%\n", pct);
+      emit(joy_sb_throttle, pct);
+    } else if (state->side == STARBOARD_SIDE
+             && replicate == PORT_SIDE) {
+      printf("Replicating to Port Throttle %u%%\n", pct);
+      emit(joy_port_throttle, pct);
+    }
+
     if (pct == 0 && !state->throttle_is_min) {
       play_sound(conf.boundary_snd);
       state->throttle_is_min = true;
@@ -508,7 +522,7 @@ void create_azipods() {
   port_azipod_state.throttle_is_max = false;
   port_azipod_state.throttle_is_min = false;
   port_azipod_state.throttle_invert = true;
-  port_azipod_state.throttle_deadband = 25;
+  port_azipod_state.throttle_deadband = 20;
   port_azipod_state.rotary_offset = 180 - 340;
   port_azipod_state.rotary_angle = 180;
 
@@ -522,7 +536,7 @@ void create_azipods() {
   starboard_azipod_state.throttle_is_max = false;
   starboard_azipod_state.throttle_is_min = false;
   starboard_azipod_state.throttle_invert = false;
-  starboard_azipod_state.throttle_deadband = 25;
+  starboard_azipod_state.throttle_deadband = 20;
   starboard_azipod_state.rotary_offset = 180 - 160;
   starboard_azipod_state.rotary_angle = 180;
 }
