@@ -13,13 +13,18 @@
 #include <linux/uinput.h>
 #include <linux/input-event-codes.h>
 #include "miniaudio/miniaudio.h"
+#include <signal.h>
+#include <errno.h>
 
 #define DEVICE "/dev/uinput"
 #define MAX_LINE_LEN 512
 
-const uint16_t PORT = 6589;
+volatile sig_atomic_t running = 1;
+
+const uint16_t UDP_PORT = 6589;
 const uint32_t UNINITIALIZED_ID = 0xFFFFFFFF;
 enum Side { PORT_SIDE = 1, STARBOARD_SIDE = 2 };
+enum Joy  { THROTTLE = 1, ROTARY = 2 };
 
 struct packet_t {
   uint16_t throttle;
@@ -30,7 +35,6 @@ struct packet_t {
 };
 
 struct azipod_state_t {
-  char name[64];
   enum Side side;
   uint32_t last_packet_id;
   uint16_t throttle_min_val;
@@ -52,25 +56,33 @@ struct azipod_conf_t {
   char neutral_snd[MAX_LINE_LEN];
 } conf;
 
-int joy_port_throttle, joy_sb_throttle;
-int joy_port_rotary, joy_sb_rotary;
+int joy_port_throttle = -1;
+int joy_sb_throttle = -1;
+int joy_port_rotary = -1;
+int joy_sb_rotary = -1;
 
 int sock = -1;
 ma_engine audio_engine;
+int audio_initialized = 0;
+
+void handle_signal(int signal) {
+  (void)signal;
+  running = 0;
+}
 
 int audio_init(void) {
   ma_result result = ma_engine_init(NULL, &audio_engine);
 
   if (result != MA_SUCCESS) {
     fprintf(stderr, "Failed to initialize audio: %d\n", result);
-    return -1;
+    return 0;
   }
 
-  return 0;
+  return 1;
 }
 
 void play_click() {
-  if (conf.neutral_snd[0] != 0) {
+  if (audio_initialized && conf.neutral_snd[0] != 0) {
     ma_result result =
       ma_engine_play_sound(&audio_engine, conf.neutral_snd, NULL);
     if (result != MA_SUCCESS) {
@@ -81,7 +93,9 @@ void play_click() {
 }
 
 void audio_cleanup(void) {
-  ma_engine_uninit(&audio_engine);
+  if (audio_initialized) {
+    ma_engine_uninit(&audio_engine);
+  }
 }
 
 int make_socket() {
@@ -104,7 +118,7 @@ int listen_on(uint16_t port) {
   struct sockaddr_in address;
   make_address(port, &address);
   
-  int sock = make_socket();
+  sock = make_socket();
   if (bind(sock, (struct sockaddr*)&address, sizeof(address)) < 0) {
     perror("Bind failed");
     close(sock);
@@ -170,36 +184,18 @@ int emit(int joy, int value) {
   }
 }
 
-uint16_t throttle_value(const struct azipod_state_t *state) {
+int select_joy(enum Joy joy_type, enum Side side) {
+  if (joy_type == THROTTLE) {
+    return side == PORT_SIDE ? joy_port_throttle : joy_sb_throttle; 
+  } else {
+    return side == PORT_SIDE ? joy_port_rotary : joy_sb_rotary; 
+  }
+}
+
+uint16_t may_invert(uint16_t val, const struct azipod_state_t *state) {
   return state->throttle_invert
-    ? state->throttle_min_val + state->throttle_max_val - state->throttle_value
-    : state->throttle_value;
-}
-
-int on_throttle_change(struct azipod_state_t *state) {
-  printf("%s - throttle: %d\n", state->name, throttle_value(state));
-  switch (state->side) {
-    case PORT_SIDE: 
-      return emit(joy_port_throttle, throttle_value(state));
-    case STARBOARD_SIDE: 
-      return emit(joy_sb_throttle, throttle_value(state));
-    default:
-      fprintf(stderr, "Invalid side.\n");
-      exit(EXIT_FAILURE);
-  }
-}
-
-int on_rotary_change(struct azipod_state_t *state) {
-  printf("%s - angle: %d\n", state->name, state->rotary_angle);
-  switch (state->side) {
-    case PORT_SIDE: 
-      return emit(joy_port_rotary, state->rotary_angle);
-    case STARBOARD_SIDE: 
-      return emit(joy_sb_rotary, state->rotary_angle);
-    default:
-      fprintf(stderr, "Invalid side.\n");
-      exit(EXIT_FAILURE);
-  }
+    ? state->throttle_min_val + state->throttle_max_val - val
+    : val;
 }
 
 void update_state(struct azipod_state_t *state, struct packet_t packet) {
@@ -211,20 +207,26 @@ void update_state(struct azipod_state_t *state, struct packet_t packet) {
   state->throttle_is_neutral = neutral;
 
   if (throttle != state->throttle_value) {
-    if (on_throttle_change(state)) {
+    if (emit(select_joy(THROTTLE, state->side), may_invert(throttle, state))) {
       state->throttle_value = throttle;
+      printf("%s Throttle %u\n",
+             state->side == PORT_SIDE ? "Port" : "Starboard",
+             may_invert(throttle, state));
     }
   }
 
   uint16_t angle = offset_angle(angle_clamp(packet.angle), state);
   if (angle != state->rotary_angle) {
-    if (on_rotary_change(state)) {
+    if (emit(select_joy(ROTARY, state->side), angle)) {
       state->rotary_angle = angle;
+      printf("%s Rotary %u\n",
+             state->side == PORT_SIDE ? "Port" : "Starboard",
+             angle);
     }
   }
 }
 
-int delta(uint16_t packet_id, uint32_t last_packet_id) {
+uint16_t delta(uint16_t packet_id, uint32_t last_packet_id) {
   if (last_packet_id == UNINITIALIZED_ID) {
     return 1;
   }
@@ -232,7 +234,7 @@ int delta(uint16_t packet_id, uint32_t last_packet_id) {
 }
 
 bool check_delta(uint16_t packet_id, uint32_t last_packet_id) {
-  int d = delta(packet_id, last_packet_id);
+  uint16_t d = delta(packet_id, last_packet_id);
   if (d == 1) {
     return true;
   } else if (d > 1 && d < 0x800) {
@@ -265,12 +267,17 @@ void process(uint32_t value) {
 }
 
 void start_server(uint16_t port) {
-  int sock = listen_on(port);
-  while (1) {
+  sock = listen_on(port);
+  while (running) {
     uint8_t value[4];
     ssize_t n = recvfrom(sock, &value, sizeof(value), 0, NULL, NULL);
     if (n < 0) {
-      perror("recvfrom");
+      if (errno == EINTR) {
+        continue;
+      } else {
+        perror("recvfrom");
+        break;
+      }
     } else if (n != sizeof(value)) {
       fprintf(stderr, "Unexpected packet size: %zd\n", n);
     } else {
@@ -281,7 +288,6 @@ void start_server(uint16_t port) {
         (uint32_t)value[3] << 24);
     }
   }
-  close(sock);
 }
 
 uint16_t mid_val(uint16_t min_val, uint16_t max_val) {
@@ -383,21 +389,26 @@ void init_joys(int port_throttle_min,
 }
 
 void cleanup() {
+  printf("Cleaning things up..\n");
   audio_cleanup();
   destroy_joys();
-  close(sock);
+  if (sock >= 0) {
+    close(sock);
+  }
 }
 
 int has_key(const char *line, const char *key) {
   size_t key_len = strlen(key);
   return strlen(line) > key_len
     && strncmp(line, key, key_len) == 0
-    && (line[key_len] == ' ' || line[key_len] == '=');
+    && (line[key_len] == ' '
+        || line[key_len] == '\t'
+        || line[key_len] == '=');
 }
 
 char *trim_key(char *p) {
-  while (*p != ' ' && *p != '=' && *p != 0) p++;
-  while ((*p == ' ' || *p == '=') && *p != 0) p++;
+  while (*p != ' ' && *p != '\t' && *p != '=' && *p != 0) p++;
+  while ((*p == ' ' || *p == '\t' || *p == '=') && *p != 0) p++;
   return p;
 }
 
@@ -449,8 +460,23 @@ void print_conf(const struct azipod_conf_t cfg) {
   printf(" * neutral_snd       = %s\n", cfg.neutral_snd);
 }
 
+void register_signal() {
+  struct sigaction sa = {0};
+  sa.sa_handler = handle_signal;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;  // Do not restart interrupted system calls
+  sigaction(SIGINT, &sa, NULL);
+  sigaction(SIGTERM, &sa, NULL);
+}
+
 int main() {    
-  read_config(&conf, "azipod.cfg");
+  register_signal();
+
+  if (!read_config(&conf, "azipod.cfg")) {
+    fprintf(stderr, "azipod.cfg not found");
+    exit(EXIT_FAILURE);
+  }
+
   print_conf(conf);
 
   init_joys(conf.port_throttle_min,
@@ -458,14 +484,13 @@ int main() {
             conf.sb_throttle_min,
             conf.sb_throttle_max);
 
-  audio_init();
+  audio_initialized = audio_init();
   
-  strcpy(port_azipod_state.name, "Left");
   port_azipod_state.side = PORT_SIDE;
   port_azipod_state.last_packet_id = UNINITIALIZED_ID;
   port_azipod_state.throttle_min_val = conf.port_throttle_min;
   port_azipod_state.throttle_max_val = conf.port_throttle_max;
-  port_azipod_state.throttle_mid_val = mid_val(port_azipod_state.throttle_min_val, port_azipod_state.throttle_max_val);
+  port_azipod_state.throttle_mid_val = mid_val(conf.port_throttle_min, conf.port_throttle_max);
   port_azipod_state.throttle_value = port_azipod_state.throttle_mid_val;
   port_azipod_state.throttle_is_neutral = true;
   port_azipod_state.throttle_invert = true;
@@ -473,12 +498,11 @@ int main() {
   port_azipod_state.rotary_offset = 180 - 340;
   port_azipod_state.rotary_angle = 180;
 
-  strcpy(starboard_azipod_state.name, "Right");
   starboard_azipod_state.side = STARBOARD_SIDE;
   starboard_azipod_state.last_packet_id = UNINITIALIZED_ID;
   starboard_azipod_state.throttle_min_val = conf.sb_throttle_min;
   starboard_azipod_state.throttle_max_val = conf.sb_throttle_max;
-  starboard_azipod_state.throttle_mid_val = mid_val(starboard_azipod_state.throttle_min_val, starboard_azipod_state.throttle_max_val);
+  starboard_azipod_state.throttle_mid_val = mid_val(conf.sb_throttle_min, conf.sb_throttle_max);
   starboard_azipod_state.throttle_value = starboard_azipod_state.throttle_mid_val;
   starboard_azipod_state.throttle_is_neutral = true;
   starboard_azipod_state.throttle_invert = false;
@@ -486,7 +510,7 @@ int main() {
   starboard_azipod_state.rotary_offset = 180 - 160;
   starboard_azipod_state.rotary_angle = 180;
   
-  start_server(PORT);
+  start_server(UDP_PORT);
 
   cleanup();
   return 0;
