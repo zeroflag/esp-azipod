@@ -490,14 +490,7 @@ int to_num(char *s) {
   }
 }
 
-int read_config(struct azipod_conf_t *cfg, char *path) {
-  FILE *file = fopen(path, "r");
-
-  if (!file) {
-    perror(path);
-    return 0;
-  }
-
+void set_config_defaults(struct azipod_conf_t *cfg) {
   cfg->neutral_snd[0] = 0;
   cfg->boundary_snd[0] = 0;
   cfg->replicate = NONE;
@@ -511,41 +504,53 @@ int read_config(struct azipod_conf_t *cfg, char *path) {
   cfg->port_throttle_max = 1023;
   cfg->port_throttle_mid = -1;
   cfg->port_throttle_deadband = 0;
+}
+
+void parse_line(char *p, struct azipod_conf_t *cfg) {
+  if (has_key(p, "port_throttle_min")) {
+    cfg->port_throttle_min = to_num(conf_val(p));
+  } else if (has_key(p, "port_throttle_max")) {
+    cfg->port_throttle_max = to_num(conf_val(p));
+  } else if (has_key(p, "port_throttle_mid")) {
+    cfg->port_throttle_mid = to_num(conf_val(p));
+  } else if (has_key(p, "port_throttle_deadband")) {
+    cfg->port_throttle_deadband = to_num(conf_val(p));
+  } else if (has_key(p, "sb_throttle_min")) {
+    cfg->sb_throttle_min = to_num(conf_val(p));
+  } else if (has_key(p, "sb_throttle_max")) {
+    cfg->sb_throttle_max = to_num(conf_val(p));
+  } else if (has_key(p, "sb_throttle_mid")) {
+    cfg->sb_throttle_max = to_num(conf_val(p));
+  } else if (has_key(p, "sb_throttle_deadband")) {
+    cfg->sb_throttle_deadband = to_num(conf_val(p));
+  } else if (has_key(p, "neutral_snd")) {
+    snprintf(cfg->neutral_snd, sizeof(cfg->neutral_snd), "%s", conf_val(p));
+  } else if (has_key(p, "boundary_snd")) {
+    snprintf(cfg->boundary_snd, sizeof(cfg->boundary_snd), "%s", conf_val(p));
+  } else if (has_key(p, "replicate")) {
+    parse_conf_replicate(conf_val(p), cfg);
+  } else {
+    fprintf(stderr, "Invalid configuration: %s\n", p);
+  }
+}
+
+int read_config(struct azipod_conf_t *cfg, char *path) {
+  FILE *file = fopen(path, "r");
+
+  if (!file) {
+    perror(path);
+    return 0;
+  }
+
+  set_config_defaults(cfg);
 
   char line[MAX_LINE_LEN];
   while (fgets(line, sizeof(line), file)) {
     line[strcspn(line, "\r\n")] = '\0';
-
     char *p = line;
     while (*p == ' ' || *p == '\t') p++;
-    if (*p == '\0' || *p == '#') {
-      continue;
-    }
-
-    if (has_key(p, "port_throttle_min")) {
-      cfg->port_throttle_min = to_num(conf_val(p));
-    } else if (has_key(p, "port_throttle_max")) {
-      cfg->port_throttle_max = to_num(conf_val(p));
-    } else if (has_key(p, "port_throttle_mid")) {
-      cfg->port_throttle_mid = to_num(conf_val(p));
-    } else if (has_key(p, "port_throttle_deadband")) {
-      cfg->port_throttle_deadband = to_num(conf_val(p));
-    } else if (has_key(p, "sb_throttle_min")) {
-      cfg->sb_throttle_min = to_num(conf_val(p));
-    } else if (has_key(p, "sb_throttle_max")) {
-      cfg->sb_throttle_max = to_num(conf_val(p));
-    } else if (has_key(p, "sb_throttle_mid")) {
-      cfg->sb_throttle_max = to_num(conf_val(p));
-    } else if (has_key(p, "sb_throttle_deadband")) {
-      cfg->sb_throttle_deadband = to_num(conf_val(p));
-    } else if (has_key(p, "neutral_snd")) {
-      snprintf(cfg->neutral_snd, sizeof(cfg->neutral_snd), "%s", conf_val(p));
-    } else if (has_key(p, "boundary_snd")) {
-      snprintf(cfg->boundary_snd, sizeof(cfg->boundary_snd), "%s", conf_val(p));
-    } else if (has_key(p, "replicate")) {
-      parse_conf_replicate(conf_val(p), cfg);
-    } else {
-      fprintf(stderr, "Invalid configuration: %s\n", p);
+    if (*p != '\0' && *p == '#') {
+      parse_line(p, cfg);
     }
   }
 
