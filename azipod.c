@@ -23,8 +23,6 @@
 #define MAX_LINE_LEN 512
 #define HALF_WAY 50
 
-volatile sig_atomic_t running = 1;
-
 const uint32_t UNINITIALIZED_ID = 0xFFFFFFFF;
 
 enum Side { PORT_SIDE, STARBOARD_SIDE, NONE };
@@ -80,6 +78,8 @@ int joy_sb_rotary = -1;
 int sock = -1;
 ma_engine audio_engine;
 int audio_initialized = 0;
+
+volatile sig_atomic_t running = 1;
 
 void handle_signal(int signal) {
   (void)signal;
@@ -141,7 +141,7 @@ int listen_on(uint16_t port) {
     exit(EXIT_FAILURE);
   }
 
-  printf("Server listening on port %d...\n", port);
+  printf("Listening on port %d...\n", port);
   return sock;
 }
 
@@ -267,7 +267,7 @@ void play_controller_sounds(uint8_t throttle_pct, struct azipod_state_t *state) 
   }
 }
 
-void update_state(struct azipod_state_t *state, struct packet_t packet) {
+void update_throttle(struct azipod_state_t *state, struct packet_t packet) {
   uint16_t throttle = throttle_clamp(packet.throttle, state);
 
   if (throttle != state->throttle_value) {
@@ -280,13 +280,14 @@ void update_state(struct azipod_state_t *state, struct packet_t packet) {
              throttle, pct);
 
       replicate_throttle(pct, state);
+      play_controller_sounds(pct, state);
     }
-
-    play_controller_sounds(pct, state);
-
   }
+}
 
+void update_rotary(struct azipod_state_t *state, struct packet_t packet) {
   uint16_t angle = offset_angle(angle_clamp(packet.angle), state);
+
   if (angle != state->rotary_angle) {
     if (emit(select_joy(JOY_ROTARY, state->side), angle)) {
       state->rotary_angle = angle;
@@ -301,10 +302,9 @@ void update_state(struct azipod_state_t *state, struct packet_t packet) {
 }
 
 uint16_t delta(uint16_t packet_id, uint32_t last_packet_id) {
-  if (last_packet_id == UNINITIALIZED_ID) {
-    return 1;
-  }
-  return (packet_id - (uint16_t)last_packet_id) & 0xFFF;
+  return last_packet_id == UNINITIALIZED_ID
+    ? 1
+    : (packet_id - (uint16_t)last_packet_id) & 0xFFF;
 }
 
 bool check_delta(uint16_t packet_id, uint32_t last_packet_id) {
@@ -322,22 +322,20 @@ bool check_delta(uint16_t packet_id, uint32_t last_packet_id) {
 void on_data(struct packet_t packet, struct azipod_state_t *state) {
   if (check_delta(packet.id, state->last_packet_id)) {
     state->last_packet_id = packet.id;
-    update_state(state, packet);
-  }
-}
-
-void dispatch(struct packet_t packet) {
-  if (packet.starboard) {
-    on_data(packet, &starboard_azipod_state);
-  } else {
-    on_data(packet, &port_azipod_state);
+    update_throttle(state, packet);
+    update_rotary(state, packet);
   }
 }
 
 void process(uint32_t value) {
   struct packet_t packet;
   parse_packet(value, &packet);
-  dispatch(packet);
+
+  if (packet.starboard) {
+    on_data(packet, &starboard_azipod_state);
+  } else {
+    on_data(packet, &port_azipod_state);
+  }
 }
 
 void start_server(uint16_t port) {
@@ -468,8 +466,12 @@ int match_key(const char *line, const char *key) {
 }
 
 char *conf_val(char *p) {
-  while (*p != ' ' && *p != '\t' && *p != '=' && *p != 0) p++;
-  while ((*p == ' ' || *p == '\t' || *p == '=') && *p != 0) p++;
+  while (*p != ' '
+         && *p != '\t'
+         && *p != '='
+         && *p != 0) p++;
+  while ((*p == ' ' || *p == '\t' || *p == '=')
+         && *p != 0) p++;
   return p;
 }
 
@@ -505,6 +507,7 @@ bool to_bool(char *s) {
   }
   return false;
 }
+
 void set_config_defaults(struct azipod_conf_t *cfg) {
   cfg->udp_port = DEFAULT_UDP_PORT;
   cfg->neutral_snd[0] = 0;
