@@ -550,7 +550,7 @@ int read_config(struct azipod_conf_t *cfg, char *path) {
     line[strcspn(line, "\r\n")] = '\0';
     char *p = line;
     while (*p == ' ' || *p == '\t') p++;
-    if (*p != '\0' && *p == '#') {
+    if (*p != '\0' && *p != '#') {
       parse_line(p, cfg);
     }
   }
