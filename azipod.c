@@ -140,7 +140,7 @@ int listen_on(uint16_t port) {
   return sock;
 }
 
-void parse(uint32_t val, struct packet_t *packet) {
+void parse_packet(uint32_t val, struct packet_t *packet) {
   packet->throttle = val & 0x3FF;
   packet->angle = (val >> 10) & 0x1FF;
   packet->id = (val >> 19) & 0xFFF;
@@ -331,7 +331,7 @@ void dispatch(struct packet_t packet) {
 
 void process(uint32_t value) {
   struct packet_t packet;
-  parse(value, &packet);
+  parse_packet(value, &packet);
   dispatch(packet);
 }
 
@@ -631,7 +631,7 @@ void initialize() {
   audio_initialized = audio_init();
 }
 
-void create_azipods() {
+void create_port_azipod() {
   port_azipod_state.side = PORT_SIDE;
   port_azipod_state.last_packet_id = UNINITIALIZED_ID;
   port_azipod_state.throttle_min_val = conf.port_throttle_min;
@@ -643,7 +643,9 @@ void create_azipods() {
   port_azipod_state.throttle_deadband = conf.port_throttle_deadband;
   port_azipod_state.rotary_offset = 180 - 340;
   port_azipod_state.rotary_angle = 180;
+}
 
+void create_starboard_azipod() {
   starboard_azipod_state.side = STARBOARD_SIDE;
   starboard_azipod_state.last_packet_id = UNINITIALIZED_ID;
   starboard_azipod_state.throttle_min_val = conf.sb_throttle_min;
@@ -659,7 +661,8 @@ void create_azipods() {
 
 int main() {
   initialize();
-  create_azipods();
+  create_port_azipod();
+  create_starboard_azipod();
   start_server(UDP_PORT);
   cleanup();
   return 0;
