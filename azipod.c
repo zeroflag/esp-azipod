@@ -457,7 +457,7 @@ void cleanup() {
   }
 }
 
-int has_key(const char *line, const char *key) {
+int match_key(const char *line, const char *key) {
   size_t key_len = strlen(key);
   return strlen(line) > key_len
     && strncmp(line, key, key_len) == 0
@@ -525,35 +525,35 @@ void set_config_defaults(struct azipod_conf_t *cfg) {
 }
 
 void parse_line(char *p, struct azipod_conf_t *cfg) {
-  if (has_key(p, "port_throttle_min")) {
+  if (match_key(p, "port_throttle_min")) {
     cfg->port_throttle_min = to_num(conf_val(p));
-  } else if (has_key(p, "port_throttle_max")) {
+  } else if (match_key(p, "port_throttle_max")) {
     cfg->port_throttle_max = to_num(conf_val(p));
-  } else if (has_key(p, "port_throttle_mid")) {
+  } else if (match_key(p, "port_throttle_mid")) {
     cfg->port_throttle_mid = to_num(conf_val(p));
-  } else if (has_key(p, "port_throttle_deadband")) {
+  } else if (match_key(p, "port_throttle_deadband")) {
     cfg->port_throttle_deadband = to_num(conf_val(p));
-  } else if (has_key(p, "port_throttle_invert")) {
+  } else if (match_key(p, "port_throttle_invert")) {
     cfg->port_throttle_invert = to_bool(conf_val(p));
-  } else if (has_key(p, "port_rotary_neutral")) {
+  } else if (match_key(p, "port_rotary_neutral")) {
     cfg->port_rotary_neutral = to_num(conf_val(p));
-  } else if (has_key(p, "sb_throttle_min")) {
+  } else if (match_key(p, "sb_throttle_min")) {
     cfg->sb_throttle_min = to_num(conf_val(p));
-  } else if (has_key(p, "sb_throttle_max")) {
+  } else if (match_key(p, "sb_throttle_max")) {
     cfg->sb_throttle_max = to_num(conf_val(p));
-  } else if (has_key(p, "sb_throttle_mid")) {
+  } else if (match_key(p, "sb_throttle_mid")) {
     cfg->sb_throttle_max = to_num(conf_val(p));
-  } else if (has_key(p, "sb_throttle_deadband")) {
+  } else if (match_key(p, "sb_throttle_deadband")) {
     cfg->sb_throttle_deadband = to_num(conf_val(p));
-  } else if (has_key(p, "sb_throttle_invert")) {
+  } else if (match_key(p, "sb_throttle_invert")) {
     cfg->sb_throttle_invert = to_bool(conf_val(p));
-  } else if (has_key(p, "sb_rotary_neutral")) {
+  } else if (match_key(p, "sb_rotary_neutral")) {
     cfg->sb_rotary_neutral = to_num(conf_val(p));
-  } else if (has_key(p, "neutral_snd")) {
+  } else if (match_key(p, "neutral_snd")) {
     snprintf(cfg->neutral_snd, sizeof(cfg->neutral_snd), "%s", conf_val(p));
-  } else if (has_key(p, "boundary_snd")) {
+  } else if (match_key(p, "boundary_snd")) {
     snprintf(cfg->boundary_snd, sizeof(cfg->boundary_snd), "%s", conf_val(p));
-  } else if (has_key(p, "replicate")) {
+  } else if (match_key(p, "replicate")) {
     parse_conf_replicate(conf_val(p), cfg);
   } else {
     fprintf(stderr, "Invalid configuration: %s\n", p);
