@@ -564,6 +564,17 @@ void parse_line(char *p, struct azipod_conf_t *cfg) {
   }
 }
 
+void calculate_mid_vals(struct azipod_conf_t *cfg) {
+  if (cfg->sb_throttle_mid == -1) {
+    cfg->sb_throttle_mid =
+      mid_val(cfg->sb_throttle_min, cfg->sb_throttle_max);
+  }
+  if (cfg->port_throttle_mid == -1) {
+    cfg->port_throttle_mid =
+      mid_val(cfg->port_throttle_min, cfg->port_throttle_max);
+  }
+}
+
 int read_config(struct azipod_conf_t *cfg, char *path) {
   FILE *file = fopen(path, "r");
 
@@ -584,12 +595,7 @@ int read_config(struct azipod_conf_t *cfg, char *path) {
     }
   }
 
-  if (cfg->sb_throttle_mid == -1) {
-    cfg->sb_throttle_mid = mid_val(cfg->sb_throttle_min, cfg->sb_throttle_max);
-  }
-  if (cfg->port_throttle_mid == -1) {
-    cfg->port_throttle_mid = mid_val(cfg->port_throttle_min, cfg->port_throttle_max);
-  }
+  calculate_mid_vals(cfg);
 
   fclose(file);
   return 1;
