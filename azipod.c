@@ -20,6 +20,7 @@
 
 #define DEVICE "/dev/uinput"
 #define MAX_LINE_LEN 512
+#define HALF_WAY 50
 
 volatile sig_atomic_t running = 1;
 
@@ -205,10 +206,10 @@ int select_joy(enum Joy joy_type, enum Side side) {
 uint8_t scale_to_pct(uint16_t value, uint16_t min_val,
                      uint16_t mid_val, uint16_t max_val) {
   if (value <= mid_val) {
-    return (uint32_t)(value - min_val) * 50
+    return (uint32_t)(value - min_val) * HALF_WAY
       / (mid_val - min_val);
   } else {
-    return 50 + (uint32_t)(value - mid_val) * 50
+    return HALF_WAY + (uint32_t)(value - mid_val) * HALF_WAY
       / (max_val - mid_val);
   }
 }
@@ -253,7 +254,7 @@ void play_controller_sounds(uint8_t throttle_pct, struct azipod_state_t *state) 
   } else if (throttle_pct == 100 && state->throttle_state != STATE_MAX) {
     play_sound(conf.boundary_snd);
     state->throttle_state = STATE_MAX;
-  } else if (throttle_pct == 50 && state->throttle_state != STATE_NEUTRAL) {
+  } else if (throttle_pct == HALF_WAY && state->throttle_state != STATE_NEUTRAL) {
     play_sound(conf.neutral_snd);
     state->throttle_state = STATE_NEUTRAL;
   } else {
@@ -428,8 +429,8 @@ void destroy_joys() {
 }
 
 void init_joys() {
-  joy_port_throttle = create_joystick("ESP Throttle Left", 0, 100, 50);
-  joy_sb_throttle = create_joystick("ESP Throttle Right", 0, 100, 50);
+  joy_port_throttle = create_joystick("ESP Throttle Left", 0, 100, HALF_WAY);
+  joy_sb_throttle = create_joystick("ESP Throttle Right", 0, 100, HALF_WAY);
 
   joy_port_rotary = create_joystick("ESP Azipod Left", 0, 359, 180);
   joy_sb_rotary = create_joystick("ESP Azipod Right", 0, 359, 180);
