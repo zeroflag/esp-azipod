@@ -18,13 +18,13 @@
 #include <limits.h>
 #include "miniaudio/miniaudio.h"
 
+#define DEFAULT_UDP_PORT 6589
 #define DEVICE "/dev/uinput"
 #define MAX_LINE_LEN 512
 #define HALF_WAY 50
 
 volatile sig_atomic_t running = 1;
 
-const uint16_t UDP_PORT = 6589;
 const uint32_t UNINITIALIZED_ID = 0xFFFFFFFF;
 
 enum Side { PORT_SIDE, STARBOARD_SIDE, NONE };
@@ -54,6 +54,7 @@ struct azipod_state_t {
 } starboard_azipod_state, port_azipod_state;
 
 struct azipod_conf_t {
+  int udp_port;
   int port_throttle_min;
   int port_throttle_max;
   int port_throttle_mid;
@@ -484,12 +485,12 @@ void parse_conf_replicate(char *val, struct azipod_conf_t *cfg) {
   }
 }
 
-int to_num(char *s) {
+int to_num(char *s, int default_val) {
   char *end;
   long value = strtol(s, &end, 10);
   if (end == s || *end != '\0') {
     fprintf(stderr, "Invalid number in config: %s\n", s);
-    return 0;
+    return default_val;
   } else {
     return value;
   }
@@ -505,6 +506,7 @@ bool to_bool(char *s) {
   return false;
 }
 void set_config_defaults(struct azipod_conf_t *cfg) {
+  cfg->udp_port = DEFAULT_UDP_PORT;
   cfg->neutral_snd[0] = 0;
   cfg->boundary_snd[0] = 0;
   cfg->replicate = NONE;
@@ -526,35 +528,37 @@ void set_config_defaults(struct azipod_conf_t *cfg) {
 
 void parse_line(char *p, struct azipod_conf_t *cfg) {
   if (match_key(p, "port_throttle_min")) {
-    cfg->port_throttle_min = to_num(conf_val(p));
+    cfg->port_throttle_min = to_num(conf_val(p), 0);
   } else if (match_key(p, "port_throttle_max")) {
-    cfg->port_throttle_max = to_num(conf_val(p));
+    cfg->port_throttle_max = to_num(conf_val(p), 1023);
   } else if (match_key(p, "port_throttle_mid")) {
-    cfg->port_throttle_mid = to_num(conf_val(p));
+    cfg->port_throttle_mid = to_num(conf_val(p), -1);
   } else if (match_key(p, "port_throttle_deadband")) {
-    cfg->port_throttle_deadband = to_num(conf_val(p));
+    cfg->port_throttle_deadband = to_num(conf_val(p), 0);
   } else if (match_key(p, "port_throttle_invert")) {
     cfg->port_throttle_invert = to_bool(conf_val(p));
   } else if (match_key(p, "port_rotary_neutral")) {
-    cfg->port_rotary_neutral = to_num(conf_val(p));
+    cfg->port_rotary_neutral = to_num(conf_val(p), 0);
   } else if (match_key(p, "sb_throttle_min")) {
-    cfg->sb_throttle_min = to_num(conf_val(p));
+    cfg->sb_throttle_min = to_num(conf_val(p), 0);
   } else if (match_key(p, "sb_throttle_max")) {
-    cfg->sb_throttle_max = to_num(conf_val(p));
+    cfg->sb_throttle_max = to_num(conf_val(p), 1023);
   } else if (match_key(p, "sb_throttle_mid")) {
-    cfg->sb_throttle_max = to_num(conf_val(p));
+    cfg->sb_throttle_mid = to_num(conf_val(p), -1);
   } else if (match_key(p, "sb_throttle_deadband")) {
-    cfg->sb_throttle_deadband = to_num(conf_val(p));
+    cfg->sb_throttle_deadband = to_num(conf_val(p), 0);
   } else if (match_key(p, "sb_throttle_invert")) {
     cfg->sb_throttle_invert = to_bool(conf_val(p));
   } else if (match_key(p, "sb_rotary_neutral")) {
-    cfg->sb_rotary_neutral = to_num(conf_val(p));
+    cfg->sb_rotary_neutral = to_num(conf_val(p), 0);
   } else if (match_key(p, "neutral_snd")) {
     snprintf(cfg->neutral_snd, sizeof(cfg->neutral_snd), "%s", conf_val(p));
   } else if (match_key(p, "boundary_snd")) {
     snprintf(cfg->boundary_snd, sizeof(cfg->boundary_snd), "%s", conf_val(p));
   } else if (match_key(p, "replicate")) {
     parse_conf_replicate(conf_val(p), cfg);
+  } else if (match_key(p, "udp_port")) {
+    cfg->udp_port = to_num(conf_val(p), DEFAULT_UDP_PORT);
   } else {
     fprintf(stderr, "Invalid configuration: %s\n", p);
   }
@@ -593,6 +597,7 @@ int read_config(struct azipod_conf_t *cfg, char *path) {
 
 void print_conf(const struct azipod_conf_t cfg) {
   printf("Configuration:\n");
+  printf(" * udp_port               = %d\n", cfg.udp_port);
   printf(" * port_throttle_min      = %d\n", cfg.port_throttle_min);
   printf(" * port_throttle_max      = %d\n", cfg.port_throttle_max);
   printf(" * port_throttle_mid      = %d\n", cfg.port_throttle_mid);
@@ -692,7 +697,7 @@ int main() {
   initialize();
   create_port_azipod();
   create_starboard_azipod();
-  start_server(UDP_PORT);
+  start_server(conf.udp_port);
   cleanup();
   return 0;
 }
