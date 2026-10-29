@@ -27,7 +27,7 @@ const uint16_t UDP_PORT = 6589;
 const uint32_t UNINITIALIZED_ID = 0xFFFFFFFF;
 
 enum Side { PORT_SIDE, STARBOARD_SIDE, NONE };
-enum Joy  { THROTTLE, ROTARY };
+enum Joy  { JOY_THROTTLE, JOY_ROTARY };
 enum ThrottleState { STATE_NEUTRAL, STATE_MIN, STATE_MAX, STATE_NONE };
 
 struct packet_t {
@@ -195,7 +195,7 @@ int emit(int joy, int value) {
 }
 
 int select_joy(enum Joy joy_type, enum Side side) {
-  if (joy_type == THROTTLE) {
+  if (joy_type == JOY_THROTTLE) {
     return side == PORT_SIDE ? joy_port_throttle : joy_sb_throttle;
   } else {
     return side == PORT_SIDE ? joy_port_rotary : joy_sb_rotary;
@@ -266,7 +266,7 @@ void update_state(struct azipod_state_t *state, struct packet_t packet) {
 
   if (throttle != state->throttle_value) {
     uint8_t pct = throttle_pct(throttle, state);
-    if (emit(select_joy(THROTTLE, state->side), pct)) {
+    if (emit(select_joy(JOY_THROTTLE, state->side), pct)) {
       state->throttle_value = throttle;
 
       printf("%s Throttle: %u (%u%%)\n",
@@ -282,7 +282,7 @@ void update_state(struct azipod_state_t *state, struct packet_t packet) {
 
   uint16_t angle = offset_angle(angle_clamp(packet.angle), state);
   if (angle != state->rotary_angle) {
-    if (emit(select_joy(ROTARY, state->side), angle)) {
+    if (emit(select_joy(JOY_ROTARY, state->side), angle)) {
       state->rotary_angle = angle;
 
       printf("%s Rotary %u\n",
@@ -461,7 +461,7 @@ int has_key(const char *line, const char *key) {
         || line[key_len] == '=');
 }
 
-char *trim_conf(char *p) {
+char *conf_val(char *p) {
   while (*p != ' ' && *p != '\t' && *p != '=' && *p != 0) p++;
   while ((*p == ' ' || *p == '\t' || *p == '=') && *p != 0) p++;
   return p;
@@ -479,7 +479,17 @@ void parse_conf_replicate(char *val, struct azipod_conf_t *cfg) {
   }
 }
 
-// TODO validation
+int to_num(char *s) {
+  char *end;
+  long value = strtol(s, &end, 10);
+  if (end == s || *end != '\0') {
+    fprintf(stderr, "Invalid number in config: %s\n", s);
+    return 0;
+  } else {
+    return value;
+  }
+}
+
 int read_config(struct azipod_conf_t *cfg, char *path) {
   FILE *file = fopen(path, "r");
 
@@ -513,27 +523,27 @@ int read_config(struct azipod_conf_t *cfg, char *path) {
     }
 
     if (has_key(p, "port_throttle_min")) {
-      cfg->port_throttle_min = atoi(trim_conf(p));
+      cfg->port_throttle_min = to_num(conf_val(p));
     } else if (has_key(p, "port_throttle_max")) {
-      cfg->port_throttle_max = atoi(trim_conf(p));
+      cfg->port_throttle_max = to_num(conf_val(p));
     } else if (has_key(p, "port_throttle_mid")) {
-      cfg->port_throttle_mid = atoi(trim_conf(p));
+      cfg->port_throttle_mid = to_num(conf_val(p));
     } else if (has_key(p, "port_throttle_deadband")) {
-      cfg->port_throttle_deadband = atoi(trim_conf(p));
+      cfg->port_throttle_deadband = to_num(conf_val(p));
     } else if (has_key(p, "sb_throttle_min")) {
-      cfg->sb_throttle_min = atoi(trim_conf(p));
+      cfg->sb_throttle_min = to_num(conf_val(p));
     } else if (has_key(p, "sb_throttle_max")) {
-      cfg->sb_throttle_max = atoi(trim_conf(p));
+      cfg->sb_throttle_max = to_num(conf_val(p));
     } else if (has_key(p, "sb_throttle_mid")) {
-      cfg->sb_throttle_max = atoi(trim_conf(p));
+      cfg->sb_throttle_max = to_num(conf_val(p));
     } else if (has_key(p, "sb_throttle_deadband")) {
-      cfg->sb_throttle_deadband = atoi(trim_conf(p));
+      cfg->sb_throttle_deadband = to_num(conf_val(p));
     } else if (has_key(p, "neutral_snd")) {
-      snprintf(cfg->neutral_snd, sizeof(cfg->neutral_snd), "%s", trim_conf(p));
+      snprintf(cfg->neutral_snd, sizeof(cfg->neutral_snd), "%s", conf_val(p));
     } else if (has_key(p, "boundary_snd")) {
-      snprintf(cfg->boundary_snd, sizeof(cfg->boundary_snd), "%s", trim_conf(p));
+      snprintf(cfg->boundary_snd, sizeof(cfg->boundary_snd), "%s", conf_val(p));
     } else if (has_key(p, "replicate")) {
-      parse_conf_replicate(trim_conf(p), cfg);
+      parse_conf_replicate(conf_val(p), cfg);
     } else {
       fprintf(stderr, "Invalid configuration: %s\n", p);
     }
