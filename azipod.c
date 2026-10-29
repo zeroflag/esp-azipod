@@ -58,10 +58,12 @@ struct azipod_conf_t {
   int port_throttle_max;
   int port_throttle_mid;
   int port_throttle_deadband;
+  int port_rotary_neutral;
   int sb_throttle_min;
   int sb_throttle_max;
   int sb_throttle_mid;
   int sb_throttle_deadband;
+  int sb_rotary_neutral;
   char neutral_snd[MAX_LINE_LEN];
   char boundary_snd[MAX_LINE_LEN];
   enum Side replicate;
@@ -500,11 +502,13 @@ void set_config_defaults(struct azipod_conf_t *cfg) {
   cfg->sb_throttle_max = 1023;
   cfg->sb_throttle_mid = -1;
   cfg->sb_throttle_deadband = 0;
+  cfg->sb_rotary_neutral = 0;
 
   cfg->port_throttle_min = 0;
   cfg->port_throttle_max = 1023;
   cfg->port_throttle_mid = -1;
   cfg->port_throttle_deadband = 0;
+  cfg->port_rotary_neutral = 0;
 }
 
 void parse_line(char *p, struct azipod_conf_t *cfg) {
@@ -516,6 +520,8 @@ void parse_line(char *p, struct azipod_conf_t *cfg) {
     cfg->port_throttle_mid = to_num(conf_val(p));
   } else if (has_key(p, "port_throttle_deadband")) {
     cfg->port_throttle_deadband = to_num(conf_val(p));
+  } else if (has_key(p, "port_rotary_neutral")) {
+    cfg->port_rotary_neutral = to_num(conf_val(p));
   } else if (has_key(p, "sb_throttle_min")) {
     cfg->sb_throttle_min = to_num(conf_val(p));
   } else if (has_key(p, "sb_throttle_max")) {
@@ -524,6 +530,8 @@ void parse_line(char *p, struct azipod_conf_t *cfg) {
     cfg->sb_throttle_max = to_num(conf_val(p));
   } else if (has_key(p, "sb_throttle_deadband")) {
     cfg->sb_throttle_deadband = to_num(conf_val(p));
+  } else if (has_key(p, "sb_rotary_neutral")) {
+    cfg->sb_rotary_neutral = to_num(conf_val(p));
   } else if (has_key(p, "neutral_snd")) {
     snprintf(cfg->neutral_snd, sizeof(cfg->neutral_snd), "%s", conf_val(p));
   } else if (has_key(p, "boundary_snd")) {
@@ -572,10 +580,12 @@ void print_conf(const struct azipod_conf_t cfg) {
   printf(" * port_throttle_max      = %d\n", cfg.port_throttle_max);
   printf(" * port_throttle_mid      = %d\n", cfg.port_throttle_mid);
   printf(" * port_throttle_deadband = %d\n", cfg.port_throttle_deadband);
+  printf(" * port_rotary_neutral    = %d\n", cfg.port_rotary_neutral);
   printf(" * sb_throttle_min        = %d\n", cfg.sb_throttle_min);
   printf(" * sb_throttle_max        = %d\n", cfg.sb_throttle_max);
   printf(" * sb_throttle_mid        = %d\n", cfg.sb_throttle_mid);
   printf(" * sb_throttle_deadband   = %d\n", cfg.sb_throttle_deadband);
+  printf(" * sb_rotary_neutral      = %d\n", cfg.sb_rotary_neutral);
   printf(" * neutral_snd            = %s\n", cfg.neutral_snd);
   printf(" * boundary_snd           = %s\n", cfg.boundary_snd);
   printf(" * replicate              = %s\n", cfg.replicate == STARBOARD_SIDE
@@ -641,7 +651,7 @@ void create_port_azipod() {
   port_azipod_state.throttle_state = STATE_NEUTRAL;
   port_azipod_state.throttle_invert = true;
   port_azipod_state.throttle_deadband = conf.port_throttle_deadband;
-  port_azipod_state.rotary_offset = 180 - 340;
+  port_azipod_state.rotary_offset = 180 - conf.port_rotary_neutral;
   port_azipod_state.rotary_angle = 180;
 }
 
@@ -655,7 +665,7 @@ void create_starboard_azipod() {
   starboard_azipod_state.throttle_state = STATE_NEUTRAL;
   starboard_azipod_state.throttle_invert = false;
   starboard_azipod_state.throttle_deadband = conf.sb_throttle_deadband;
-  starboard_azipod_state.rotary_offset = 180 - 160;
+  starboard_azipod_state.rotary_offset = 180 - conf.sb_rotary_neutral;
   starboard_azipod_state.rotary_angle = 180;
 }
 
