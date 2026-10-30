@@ -457,6 +457,26 @@ void cleanup() {
   }
 }
 
+bool exec_dir(char *result, size_t size) {
+  if (size == 0) return 0;
+
+  ssize_t len = readlink("/proc/self/exe", result, size - 1);
+  if (len < 0) {
+    perror("readlink");
+    return false;
+  }
+  if (len == (ssize_t)(size - 1)) {
+    fprintf(stderr, "Executable path too long\n");
+    return false;
+  }
+
+  result[len] = '\0';
+  char *dir = dirname(result);
+  memmove(result, dir, strlen(dir) + 1);
+
+  return true;
+}
+
 int match_key(const char *line, const char *key) {
   size_t key_len = strlen(key);
   return strlen(line) > key_len
@@ -501,7 +521,7 @@ int to_num(char *s, int default_val) {
   return value;
 }
 
-bool to_bool(char *s) {
+bool to_bool(const char *s) {
   if (strcmp(s, "true") == 0) {
     return true;
   }
@@ -509,6 +529,26 @@ bool to_bool(char *s) {
     fprintf(stderr, "Invalid bool in config: %s\n", s);
   }
   return false;
+}
+
+bool resolve_path(const char *s, char *result, size_t max_len) {
+  if (max_len == 0 || s == NULL) {
+    return false;
+  }
+  if (s[0] == '\0') {
+    result[0] = '\0';
+    return true;
+  }
+  if (s[0] == '/') {
+    int n = snprintf(result, max_len, "%s", s);
+    return n >= 0 && (size_t)n < max_len;
+  } 
+  char dir[PATH_MAX];
+  if (exec_dir(dir, sizeof(dir))) {
+    int n = snprintf(result, max_len, "%s/%s", dir, s);
+    return n >= 0 && (size_t)n < max_len;
+  }
+  return false; 
 }
 
 void set_config_defaults(struct azipod_conf_t *cfg) {
@@ -558,9 +598,9 @@ void parse_line(char *p, struct azipod_conf_t *cfg) {
   } else if (match_key(p, "sb_rotary_neutral")) {
     cfg->sb_rotary_neutral = to_num(conf_val(p), 0);
   } else if (match_key(p, "neutral_snd")) {
-    snprintf(cfg->neutral_snd, sizeof(cfg->neutral_snd), "%s", conf_val(p));
+    resolve_path(conf_val(p), cfg->neutral_snd, sizeof(cfg->neutral_snd));
   } else if (match_key(p, "boundary_snd")) {
-    snprintf(cfg->boundary_snd, sizeof(cfg->boundary_snd), "%s", conf_val(p));
+    resolve_path(conf_val(p), cfg->boundary_snd, sizeof(cfg->boundary_snd));
   } else if (match_key(p, "replicate")) {
     parse_conf_replicate(conf_val(p), cfg);
   } else if (match_key(p, "udp_port")) {
@@ -664,29 +704,9 @@ void register_signal() {
   sigaction(SIGTERM, &sa, NULL);
 }
 
-bool exec_path(char *result, size_t size) {
-  if (size == 0) return 0;
-
-  ssize_t len = readlink("/proc/self/exe", result, size - 1);
-  if (len < 0) {
-    perror("readlink");
-    return false;
-  }
-  if (len == (ssize_t)(size - 1)) {
-    fprintf(stderr, "Executable path too long\n");
-    return false;
-  }
-
-  result[len] = '\0';
-  char *dir = dirname(result);
-  memmove(result, dir, strlen(dir) + 1);
-
-  return true;
-}
-
 bool locate_config(char *config_path, size_t size) {
   char path[PATH_MAX];
-  if (!exec_path(path, sizeof(path)))
+  if (!exec_dir(path, sizeof(path)))
     return false;
 
   int n = snprintf(config_path, size, "%s/azipod.cfg", path);
