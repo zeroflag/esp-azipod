@@ -295,7 +295,7 @@ void update_rotary(struct azipod_state_t *state, struct packet_t packet) {
       printf("%s Rotary %u\n",
              state->side == PORT_SIDE ? "Port" : "Starboard",
              angle);
-      
+
       replicate_rotary(angle, state);
     }
   }
@@ -498,9 +498,9 @@ char *conf_val(char *p) {
 
 void parse_conf_replicate(char *val, struct azipod_conf_t *cfg) {
   if (strcmp(val, "STARBOARD") == 0) {
-    cfg->replicate = STARBOARD_SIDE;  
+    cfg->replicate = STARBOARD_SIDE;
   } else if (strcmp(val, "PORT") == 0) {
-    cfg->replicate = PORT_SIDE;  
+    cfg->replicate = PORT_SIDE;
   } else if (strcmp(val, "NONE") == 0) {
     cfg->replicate = NONE;
   } else {
@@ -517,7 +517,7 @@ int to_num(char *s, int default_val) {
       || value < INT_MIN || value > INT_MAX) {
     fprintf(stderr, "Invalid number in config: %s\n", s);
     return default_val;
-  } 
+  }
   return value;
 }
 
@@ -542,13 +542,13 @@ bool resolve_path(const char *s, char *result, size_t max_len) {
   if (s[0] == '/') {
     int n = snprintf(result, max_len, "%s", s);
     return n >= 0 && (size_t)n < max_len;
-  } 
+  }
   char dir[PATH_MAX];
   if (exec_dir(dir, sizeof(dir))) {
     int n = snprintf(result, max_len, "%s/%s", dir, s);
     return n >= 0 && (size_t)n < max_len;
   }
-  return false; 
+  return false;
 }
 
 void set_config_defaults(struct azipod_conf_t *cfg) {
@@ -692,7 +692,7 @@ bool validate_config(const struct azipod_conf_t cfg) {
     fprintf(stderr, "Invalid starboard throttle mid value. Expected min < mid < max\n");
     return false;
   }
-  return true; 
+  return true;
 }
 
 void register_signal() {
