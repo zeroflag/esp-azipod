@@ -34,7 +34,7 @@ struct packet_t {
   uint16_t angle;
   uint16_t id;
   bool starboard;
-  uint32_t timestamp;
+  time_t timestamp;
 };
 
 struct azipod_state_t {
@@ -63,7 +63,7 @@ struct azipod_conf_t {
   int sb_throttle_max;
   int sb_throttle_mid;
   int sb_throttle_deadband;
-  int sb_throttle_invert;
+  bool sb_throttle_invert;
   int sb_rotary_neutral;
   char neutral_snd[MAX_LINE_LEN];
   char boundary_snd[MAX_LINE_LEN];
@@ -243,11 +243,11 @@ void replicate_throttle(uint8_t pct, struct azipod_state_t *state) {
 void replicate_rotary(uint16_t angle, struct azipod_state_t *state) {
   if (state->side == PORT_SIDE
       && conf.replicate == PORT_SIDE) {
-    printf("Replicating Port to Starboard. Rotary: %u%%\n", angle);
+    printf("Replicating Port to Starboard. Rotary: %u°\n", angle);
     emit(joy_sb_rotary, angle);
   } else if (state->side == STARBOARD_SIDE
           && conf.replicate == STARBOARD_SIDE) {
-    printf("Replicating Starboard to Port. Rotary: %u%%\n", angle);
+    printf("Replicating Starboard to Port. Rotary: %u°\n", angle);
     emit(joy_port_rotary, angle);
   }
 }
@@ -342,7 +342,8 @@ void start_server(uint16_t port) {
   sock = listen_on(port);
   while (running) {
     uint8_t value[4];
-    ssize_t n = recvfrom(sock, &value, sizeof(value), 0, NULL, NULL);
+    ssize_t n = recvfrom(sock, &value, sizeof(value),
+                         MSG_TRUNC, NULL, NULL);
     if (n < 0) {
       if (errno == EINTR) {
         continue;
@@ -484,18 +485,20 @@ void parse_conf_replicate(char *val, struct azipod_conf_t *cfg) {
     cfg->replicate = NONE;
   } else {
     fprintf(stderr, "Invalid config value replicate = %s\n", val);
+    cfg->replicate = NONE;
   }
 }
 
 int to_num(char *s, int default_val) {
   char *end;
   long value = strtol(s, &end, 10);
-  if (end == s || *end != '\0') {
+  if (end == s || *end != '\0'
+      || errno == ERANGE
+      || value < INT_MIN || value > INT_MAX) {
     fprintf(stderr, "Invalid number in config: %s\n", s);
     return default_val;
-  } else {
-    return value;
-  }
+  } 
+  return value;
 }
 
 bool to_bool(char *s) {
@@ -598,6 +601,12 @@ int read_config(struct azipod_conf_t *cfg, char *path) {
     }
   }
 
+  if (ferror(file)) {
+    perror("Reading config");
+    fclose(file);
+    return 0;
+  }
+
   calculate_mid_vals(cfg);
 
   fclose(file);
@@ -624,6 +633,26 @@ void print_conf(const struct azipod_conf_t cfg) {
   printf(" * replicate              = %s\n", cfg.replicate == STARBOARD_SIDE
          ? "STARBOARD"
          : (cfg.replicate == PORT_SIDE ? "PORT" : "NONE"));
+}
+
+bool validate_config(const struct azipod_conf_t cfg) {
+  if (cfg.port_throttle_min >= cfg.port_throttle_max) {
+    fprintf(stderr, "Invalid port throttle min/max values. Expected min < max\n");
+    return false;
+  }
+  if (cfg.port_throttle_mid >= cfg.port_throttle_max || cfg.port_throttle_mid <= cfg.port_throttle_min) {
+    fprintf(stderr, "Invalid port throttle mid value. Expected min < mid < max\n");
+    return false;
+  }
+  if (cfg.sb_throttle_min >= cfg.sb_throttle_max) {
+    fprintf(stderr, "Invalid starboard throttle min/max values. Expected min < max\n");
+    return false;
+  }
+  if (cfg.sb_throttle_mid >= cfg.sb_throttle_max || cfg.sb_throttle_mid <= cfg.sb_throttle_min) {
+    fprintf(stderr, "Invalid starboard throttle mid value. Expected min < mid < max\n");
+    return false;
+  }
+  return true; 
 }
 
 void register_signal() {
@@ -683,7 +712,12 @@ void initialize() {
     fprintf(stderr, "Config file azipod.cfg not found.");
     exit(EXIT_FAILURE);
   }
+
   print_conf(conf);
+
+  if (!validate_config(conf)) {
+    exit(EXIT_FAILURE);
+  }
 
   init_joys();
   audio_initialized = audio_init();
