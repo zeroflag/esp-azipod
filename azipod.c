@@ -635,18 +635,29 @@ void register_signal() {
   sigaction(SIGTERM, &sa, NULL);
 }
 
-int locate_config(char *config_path, size_t size) {
-  char path[PATH_MAX];
+int exec_path(char *result, size_t size) {
+  if (size == 0) return 0;
 
-  ssize_t len = readlink("/proc/self/exe", path, sizeof(path) - 1);
+  ssize_t len = readlink("/proc/self/exe", result, size - 1);
   if (len < 0) {
     perror("readlink");
     return 0;
   }
+  if (len == (ssize_t)(size - 1)) {
+    fprintf(stderr, "Executable path too long\n");
+    return 0;
+  }
 
-  path[len] = '\0';
+  result[len] = '\0';
+  dirname(result);
+  return 1;
+}
 
-  int n = snprintf(config_path, size, "%s/azipod.cfg", dirname(path));
+int locate_config(char *config_path, size_t size) {
+  char path[PATH_MAX];
+  exec_path(path, sizeof(path));
+
+  int n = snprintf(config_path, size, "%s/azipod.cfg", path);
   if (n < 0 || (size_t)n >= size) {
     fprintf(stderr, "Config path is too long\n");
     return 0;
