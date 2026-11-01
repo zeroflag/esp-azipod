@@ -30,10 +30,10 @@ enum Joy  { JOY_THROTTLE, JOY_ROTARY };
 enum ThrottleState { STATE_NEUTRAL, STATE_MIN, STATE_MAX, STATE_NONE };
 
 struct packet_t {
+  uint16_t id;
   uint16_t throttle;
   uint16_t angle;
-  uint16_t id;
-  bool starboard;
+  bool is_starboard;
   time_t timestamp;
 };
 
@@ -114,7 +114,7 @@ void audio_cleanup(void) {
   }
 }
 
-int make_socket() {
+int make_socket(void) {
   sock = socket(AF_INET, SOCK_DGRAM, 0);
   if (sock < 0) {
     perror("Socket creation failed");
@@ -146,10 +146,10 @@ int listen_on(uint16_t port) {
 }
 
 void parse_packet(uint32_t val, struct packet_t *packet) {
+  packet->id = (val >> 19) & 0xFFF;
   packet->throttle = val & 0x3FF;
   packet->angle = (val >> 10) & 0x1FF;
-  packet->id = (val >> 19) & 0xFFF;
-  packet->starboard = (val & 0x80000000u) != 0;
+  packet->is_starboard = (val & 0x80000000u) != 0;
   packet->timestamp = time(NULL);
 }
 
@@ -267,7 +267,7 @@ void play_controller_sounds(uint8_t throttle_pct, struct azipod_state_t *state) 
   }
 }
 
-void update_throttle(struct azipod_state_t *state, struct packet_t packet) {
+void update_throttle(struct azipod_state_t *state, const struct packet_t packet) {
   uint16_t throttle = throttle_clamp(packet.throttle, state);
 
   if (throttle != state->throttle_value) {
@@ -285,7 +285,7 @@ void update_throttle(struct azipod_state_t *state, struct packet_t packet) {
   }
 }
 
-void update_rotary(struct azipod_state_t *state, struct packet_t packet) {
+void update_rotary(struct azipod_state_t *state, const struct packet_t packet) {
   uint16_t angle = offset_angle(angle_clamp(packet.angle), state);
 
   if (angle != state->rotary_angle) {
@@ -312,7 +312,7 @@ bool check_delta(uint16_t packet_id, uint32_t last_packet_id) {
   if (d == 1) {
     return true;
   } else if (d > 1 && d < 0x800) {
-    fprintf(stderr, "Missing %d packet(s)\n", d-1);
+    printf("Missing %d packet(s)\n", d-1);
     return true;
   } else {
     return false; // out of order / too old
@@ -331,7 +331,7 @@ void process(uint32_t value) {
   struct packet_t packet;
   parse_packet(value, &packet);
 
-  if (packet.starboard) {
+  if (packet.is_starboard) {
     on_data(packet, &starboard_azipod_state);
   } else {
     on_data(packet, &port_azipod_state);
@@ -425,14 +425,14 @@ void destroy_joy(int joy) {
   }
 }
 
-void destroy_joys() {
+void destroy_joys(void) {
  destroy_joy(joy_port_throttle);
  destroy_joy(joy_sb_throttle);
  destroy_joy(joy_port_rotary);
  destroy_joy(joy_sb_rotary);
 }
 
-void init_joys() {
+void init_joys(void) {
   joy_port_throttle = create_joystick("ESP Throttle Left", 0, 100, HALF_WAY);
   joy_sb_throttle = create_joystick("ESP Throttle Right", 0, 100, HALF_WAY);
 
@@ -448,7 +448,7 @@ void init_joys() {
   }
 }
 
-void cleanup() {
+void cleanup(void) {
   printf("Cleaning things up..\n");
   audio_cleanup();
   destroy_joys();
@@ -496,7 +496,7 @@ char *conf_val(char *p) {
   return p;
 }
 
-void parse_conf_replicate(char *val, struct azipod_conf_t *cfg) {
+void parse_conf_replicate(const char *val, struct azipod_conf_t *cfg) {
   if (strcmp(val, "STARBOARD") == 0) {
     cfg->replicate = STARBOARD_SIDE;
   } else if (strcmp(val, "PORT") == 0) {
@@ -509,7 +509,7 @@ void parse_conf_replicate(char *val, struct azipod_conf_t *cfg) {
   }
 }
 
-int to_num(char *s, int default_val) {
+int to_num(const char *s, int default_val) {
   char *end;
   long value = strtol(s, &end, 10);
   if (end == s || *end != '\0'
@@ -621,7 +621,7 @@ void calculate_mid_vals(struct azipod_conf_t *cfg) {
   }
 }
 
-int read_config(struct azipod_conf_t *cfg, char *path) {
+int read_config(struct azipod_conf_t *cfg, const char *path) {
   FILE *file = fopen(path, "r");
 
   if (!file) {
@@ -695,7 +695,7 @@ bool validate_config(const struct azipod_conf_t cfg) {
   return true;
 }
 
-void register_signal() {
+void register_signal(void) {
   struct sigaction sa = {0};
   sa.sa_handler = handle_signal;
   sigemptyset(&sa.sa_mask);
@@ -718,7 +718,7 @@ bool locate_config(char *config_path, size_t size) {
   return true;
 }
 
-void initialize() {
+void initialize(void) {
   register_signal();
 
   char config_path[PATH_MAX];
@@ -743,7 +743,7 @@ void initialize() {
   audio_initialized = audio_init();
 }
 
-void create_port_azipod() {
+void create_port_azipod(void) {
   port_azipod_state.side = PORT_SIDE;
   port_azipod_state.last_packet_id = UNINITIALIZED_ID;
   port_azipod_state.throttle_min_val = conf.port_throttle_min;
@@ -757,7 +757,7 @@ void create_port_azipod() {
   port_azipod_state.rotary_angle = 180;
 }
 
-void create_starboard_azipod() {
+void create_starboard_azipod(void) {
   starboard_azipod_state.side = STARBOARD_SIDE;
   starboard_azipod_state.last_packet_id = UNINITIALIZED_ID;
   starboard_azipod_state.throttle_min_val = conf.sb_throttle_min;
