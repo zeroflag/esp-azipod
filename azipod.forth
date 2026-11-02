@@ -52,7 +52,8 @@ exception: EI2C
   8 1 do
     adc-read +
   loop
-  3 rshift ; \ div by 8
+  3 rshift  \ div by 8
+  dup 1023 > if drop 1023 then ;
 
 ( *** Networking *** )
 
