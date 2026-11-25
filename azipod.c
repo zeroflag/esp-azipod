@@ -26,7 +26,6 @@
 const uint32_t UNINITIALIZED_ID = 0xFFFFFFFF;
 
 enum Side { PORT_SIDE, STARBOARD_SIDE, NONE };
-enum Joy  { JOY_THROTTLE, JOY_ROTARY };
 enum ThrottleState { STATE_NEUTRAL, STATE_MIN, STATE_MAX, STATE_NONE };
 
 struct packet_t {
@@ -70,10 +69,8 @@ struct azipod_conf_t {
   enum Side replicate;
 } conf;
 
-int joy_port_throttle = -1;
-int joy_sb_throttle = -1;
-int joy_port_rotary = -1;
-int joy_sb_rotary = -1;
+int joy_port = -1;
+int joy_sb = -1;
 
 int sock = -1;
 ma_engine audio_engine;
@@ -178,11 +175,11 @@ uint16_t offset_angle(uint16_t val, const struct azipod_state_t *state) {
   return (angle + 360) % 360;
 }
 
-int emit(int joy, int value) {
+int emit(int joy, int axis, int value) {
   struct input_event events[2] = {0};
 
   events[0].type = EV_ABS;
-  events[0].code = ABS_X;
+  events[0].code = axis;
   events[0].value = value;
 
   events[1].type = EV_SYN;
@@ -200,12 +197,8 @@ int emit(int joy, int value) {
   }
 }
 
-int select_joy(enum Joy joy_type, enum Side side) {
-  if (joy_type == JOY_THROTTLE) {
-    return side == PORT_SIDE ? joy_port_throttle : joy_sb_throttle;
-  } else {
-    return side == PORT_SIDE ? joy_port_rotary : joy_sb_rotary;
-  }
+int select_joy(enum Side side) {
+  return side == PORT_SIDE ? joy_port : joy_sb;
 }
 
 uint8_t scale_to_pct(uint16_t value, uint16_t min_val,
@@ -232,11 +225,11 @@ void replicate_throttle(uint8_t pct, struct azipod_state_t *state) {
   if (state->side == PORT_SIDE
       && conf.replicate == PORT_SIDE) {
     printf("Replicating Port to Starboard. Throttle: %u%%\n", pct);
-    emit(joy_sb_throttle, pct);
+    emit(joy_sb, ABS_X, pct);
   } else if (state->side == STARBOARD_SIDE
           && conf.replicate == STARBOARD_SIDE) {
     printf("Replicating Starboard to Port. Throttle: %u%%\n", pct);
-    emit(joy_port_throttle, pct);
+    emit(joy_port, ABS_X, pct);
   }
 }
 
@@ -244,11 +237,11 @@ void replicate_rotary(uint16_t angle, struct azipod_state_t *state) {
   if (state->side == PORT_SIDE
       && conf.replicate == PORT_SIDE) {
     printf("Replicating Port to Starboard. Rotary: %u°\n", angle);
-    emit(joy_sb_rotary, angle);
+    emit(joy_sb, ABS_RX, angle);
   } else if (state->side == STARBOARD_SIDE
           && conf.replicate == STARBOARD_SIDE) {
     printf("Replicating Starboard to Port. Rotary: %u°\n", angle);
-    emit(joy_port_rotary, angle);
+    emit(joy_port, ABS_RX, angle);
   }
 }
 
@@ -272,7 +265,7 @@ void update_throttle(struct azipod_state_t *state, const struct packet_t packet)
 
   if (throttle != state->throttle_value) {
     uint8_t pct = throttle_pct(throttle, state);
-    if (emit(select_joy(JOY_THROTTLE, state->side), pct)) {
+    if (emit(select_joy(state->side), ABS_X, pct)) {
       state->throttle_value = throttle;
 
       printf("%s Throttle: %u (%u%%)\n",
@@ -289,7 +282,7 @@ void update_rotary(struct azipod_state_t *state, const struct packet_t packet) {
   uint16_t angle = offset_angle(angle_clamp(packet.angle), state);
 
   if (angle != state->rotary_angle) {
-    if (emit(select_joy(JOY_ROTARY, state->side), angle)) {
+    if (emit(select_joy(state->side), ABS_RX, angle)) {
       state->rotary_angle = angle;
 
       printf("%s Rotary %u\n",
@@ -367,7 +360,28 @@ uint16_t mid_val(uint16_t min_val, uint16_t max_val) {
   return (max_val - min_val) / 2 + min_val;
 }
 
-int create_joystick(const char *name, int min_val, int max_val, int start_val) {
+int setup_axis(int fd, int code, int min_val, int max_val, int start_val) {
+  struct uinput_abs_setup abs_setup = {
+    .code = code,
+    .absinfo = {
+      .value = start_val,
+      .minimum = min_val,
+      .maximum = max_val,
+      .fuzz = 0,
+      .flat = 0,
+      .resolution = 0,
+    },
+  };
+  if (ioctl(fd, UI_ABS_SETUP, &abs_setup) < 0) {
+    perror("UI_ABS_SETUP");
+    return -1;
+  }
+  return 0;
+}
+
+int create_joystick(const char *name,
+                    int throttle_min, int throttle_max, int throttle_mid,
+                    int rotary_min, int rotary_max, int rotary_mid) {
   int fd = open(DEVICE, O_WRONLY | O_NONBLOCK);
   if (fd < 0) {
     perror("open uinput device");
@@ -377,30 +391,23 @@ int create_joystick(const char *name, int min_val, int max_val, int start_val) {
   if (ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0 ||
     ioctl(fd, UI_SET_KEYBIT, BTN_JOYSTICK) < 0 ||
     ioctl(fd, UI_SET_EVBIT, EV_ABS) < 0 ||
-    ioctl(fd, UI_SET_ABSBIT, ABS_X) < 0) {
+    ioctl(fd, UI_SET_ABSBIT, ABS_X) < 0 ||
+    ioctl(fd, UI_SET_ABSBIT, ABS_Y) < 0 ||
+    ioctl(fd, UI_SET_ABSBIT, ABS_Z) < 0 ||
+    ioctl(fd, UI_SET_ABSBIT, ABS_RX) < 0) {
     perror("Configure joystick capabilities");
     close(fd);
     return -1;
   }
 
-  struct uinput_abs_setup abs_setup = {
-    .code = ABS_X,
-    .absinfo = {
-        .value = start_val,
-        .minimum = min_val,
-        .maximum = max_val,
-        .fuzz = 0,
-        .flat = 0,
-        .resolution = 0,
-    },
-  };
-
-  if (ioctl(fd, UI_ABS_SETUP, &abs_setup) < 0) {
-    perror("UI_ABS_SETUP");
+  if (setup_axis(fd, ABS_X, throttle_min, throttle_max, throttle_mid) < 0 ||
+      setup_axis(fd, ABS_Y, 0, 100, 50) < 0 ||
+      setup_axis(fd, ABS_Z, 0, 100, 50) < 0 ||
+      setup_axis(fd, ABS_RX, rotary_min, rotary_max, rotary_mid) < 0) {
     close(fd);
     return -1;
   }
-
+  
   struct uinput_setup setup = {0};
   snprintf(setup.name, UINPUT_MAX_NAME_SIZE, "%s", name);
   setup.id.bustype = BUS_VIRTUAL;
@@ -426,23 +433,15 @@ void destroy_joy(int joy) {
 }
 
 void destroy_joys(void) {
- destroy_joy(joy_port_throttle);
- destroy_joy(joy_sb_throttle);
- destroy_joy(joy_port_rotary);
- destroy_joy(joy_sb_rotary);
+ destroy_joy(joy_port);
+ destroy_joy(joy_sb);
 }
 
 void init_joys(void) {
-  joy_port_throttle = create_joystick("ESP Throttle Left", 0, 100, HALF_WAY);
-  joy_sb_throttle = create_joystick("ESP Throttle Right", 0, 100, HALF_WAY);
+  joy_port = create_joystick("ESP Azipod Left", 0, 100, HALF_WAY, 0, 359, 180);
+  joy_sb = create_joystick("ESP Azipod Right", 0, 100, HALF_WAY, 0, 359, 180);
 
-  joy_port_rotary = create_joystick("ESP Azipod Left", 0, 359, 180);
-  joy_sb_rotary = create_joystick("ESP Azipod Right", 0, 359, 180);
-
-  if (joy_port_throttle < 0
-      || joy_sb_throttle < 0
-      || joy_port_rotary < 0
-      || joy_sb_rotary < 0) {
+  if (joy_port < 0 || joy_sb < 0) {
    destroy_joys();
    exit(EXIT_FAILURE);
   }
@@ -772,6 +771,7 @@ void create_starboard_azipod(void) {
 }
 
 int main() {
+  printf("ESP azipod starting..\n");
   initialize();
   create_port_azipod();
   create_starboard_azipod();
