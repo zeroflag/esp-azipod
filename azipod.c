@@ -285,7 +285,7 @@ void update_rotary(struct azipod_state_t *state, const struct packet_t packet) {
     if (emit(select_joy(state->side), ABS_RX, angle)) {
       state->rotary_angle = angle;
 
-      printf("%s Rotary %u\n",
+      printf("%s Rotary %u°\n",
              state->side == PORT_SIDE ? "Port" : "Starboard",
              angle);
 
